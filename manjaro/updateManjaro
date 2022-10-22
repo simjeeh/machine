@@ -1,0 +1,15 @@
+#!/bin/bash
+
+function update_system() {
+  yay -Syu --answerclean All --answerdiff None --nocleanmenu --nodiffmenu
+  sudo snap refresh
+  sudo pacman -Syyu
+}
+export -f update_system
+echo "update_system"
+
+function update_chrome(){
+  yay -S google-chrome --answerclean All --answerdiff None --nocleanmenu --nodiffmenu
+}
+export -f update_chrome
+echo "update_chrome"
