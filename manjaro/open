@@ -1,6 +1,4 @@
 #!/bin/bash
 
-function open() {
-  dolphin $1 &
-}
-export -f open
+alias open=xdg-open
+
