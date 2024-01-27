@@ -22,3 +22,9 @@ function update_chrome(){
 }
 export -f update_chrome
 echo "update_chrome"
+
+function clean_system(){
+  sudo paccache -rvk0
+}
+export -f clean_system
+echo "clean_system"
