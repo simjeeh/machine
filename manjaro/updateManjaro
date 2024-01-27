@@ -8,6 +8,15 @@ function update_system() {
 export -f update_system
 echo "update_system"
 
+function update_system_hard(){
+  sudo pacman-mirrors -c all
+  yay -Syu --answerclean All --answerdiff None --nocleanmenu --nodiffmenu --save --noconfirm
+  sudo snap refresh
+  sudo pacman -Syyu
+}
+export -f update_system_hard
+echo "update_system_hard"
+
 function update_chrome(){
   yay -S google-chrome --answerclean All --answerdiff None --nocleanmenu --nodiffmenu
 }
