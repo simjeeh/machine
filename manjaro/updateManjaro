@@ -1,7 +1,7 @@
 #!/bin/bash
 
 function update_system() {
-  yay -Syu --answerclean All --answerdiff None --nocleanmenu --nodiffmenu --save --noconfirm
+  yay -Syu --answerclean All --answerdiff None --cleanmenu false --diffmenu false --save --noconfirm
   sudo snap refresh
   sudo pacman -Syyu
 }
@@ -10,7 +10,7 @@ echo "update_system"
 
 function update_system_hard(){
   sudo pacman-mirrors -c all
-  yay -Syu --answerclean All --answerdiff None --nocleanmenu --nodiffmenu --save --noconfirm
+  yay -Syu --answerclean All --answerdiff None --cleanmenu false --diffmenu false --save --noconfirm
   sudo snap refresh
   sudo pacman -Syyu
 }
@@ -18,7 +18,7 @@ export -f update_system_hard
 echo "update_system_hard"
 
 function update_chrome(){
-  yay -S google-chrome --answerclean All --answerdiff None --nocleanmenu --nodiffmenu
+  yay -S google-chrome --answerclean All --answerdiff None --cleanmenu false --diffmenu false
 }
 export -f update_chrome
 echo "update_chrome"
