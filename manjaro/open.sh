@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 alias open=xdg-open
 
