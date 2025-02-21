@@ -1,0 +1,10 @@
+[Unit]
+Description=vpn-downloader Transmission container
+
+[Service]
+Restart=always
+ExecStart=/home/huzaifah/apps/vpn-downloader/containers/deploy-transmission.sh
+ExecStop=/usr/bin/podman stop vpn-downloader-transmission
+
+[Install]
+WantedBy=local.target

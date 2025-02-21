@@ -10,9 +10,6 @@ yes | pacman -Syu sublime-text
 # install yay
 yes | pacman -S yay
 
-# install pacman-contrib and google-chrome
-sudo -u ${SUDO_USER} zsh -c "yay -S vim code pacman-contrib google-chrome --answerclean All --answerdiff None --noconfirm"
-
 chmod +x ${SCRIPT_PATH}/manjaro/manjaroSource.sh
 sudo -u ${SUDO_USER} zsh -c "echo \"source ${SCRIPT_PATH}/manjaro/manjaroSource.sh\" >> \${HOME}/.zshrc"
 

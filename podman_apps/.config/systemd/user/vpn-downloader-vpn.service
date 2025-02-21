@@ -1,0 +1,10 @@
+[Unit]
+Description=vpn-downloader VPN container
+
+[Service]
+Restart=always
+ExecStart=/home/huzaifah/apps/vpn-downloader/containers/deploy-vpn.sh
+ExecStop=/usr/bin/podman stop vpn-downloader-vpn
+
+[Install]
+WantedBy=local.target
