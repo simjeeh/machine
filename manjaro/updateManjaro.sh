@@ -12,12 +12,6 @@ function update_system_hard(){
 export update_system_hard
 echo "update_system_hard"
 
-function update_chrome(){
-  yay -S google-chrome --answerclean All --answerdiff None
-}
-export update_chrome
-echo "update_chrome"
-
 function clean_system(){
   sudo paccache -rk0
   sudo pacman -Scc
