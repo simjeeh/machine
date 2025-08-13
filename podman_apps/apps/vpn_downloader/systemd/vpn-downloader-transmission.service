@@ -1,0 +1,12 @@
+[Unit]
+Description=VPN Downloader Transmission Container
+
+[Service]
+ExecStart=/opt/vpn_downloader/deploy-transmission.sh
+ExecStop=/usr/bin/podman stop vpn-downloader-transmission
+ExecStopPost=/usr/bin/podman rm -f vpn-downloader-transmission
+Restart=always
+
+[Install]
+WantedBy=local.target
+
