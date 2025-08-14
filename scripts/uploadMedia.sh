@@ -1,0 +1,139 @@
+#!/bin/bash
+
+# Check if script is run as root
+if [[ ${EUID} -ne 0 ]]; then
+  echo "This script must be run as root"
+  exit 1
+fi
+
+# Function to show usage
+show_usage() {
+  echo "/Movies"
+  echo "Usage: $0 [-m|-s|-h]"
+  echo "  -m    Process Movies directory"
+  echo "  -s    Process Shows directory"
+  echo "  -h    Show this help"
+  echo ""
+  echo "Example:"
+  echo "  $0 -m"
+  echo "  $0 -s"
+  exit 1
+}
+
+# Initialize variables
+SOURCE_DIR="/home/${SUDO_USER}/.podman/vpn_downloader/downloads/complete"
+DEST_DIR="/mnt/nas/jellyfin"
+
+M_SET=false
+S_SET=false
+
+# Parse command line arguments
+while getopts "msh" opt; do
+  case $opt in
+    m)
+      SOURCE_DIR="${SOURCE_DIR}/Movies"
+      DEST_DIR="${DEST_DIR}/Movies"
+      M_SET=true
+      ;;
+    s)
+      SOURCE_DIR="${SOURCE_DIR}/Shows"
+      DEST_DIR="${DEST_DIR}/Shows"
+      S_SET=true
+      ;;
+    h)
+      show_usage
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      show_usage
+      ;;
+  esac
+done
+
+if { ! ${M_SET} && ! ${S_SET}; } || { ${M_SET} && ${S_SET}; }; then
+  echo "Error: You must provide either -m or -s" >&2
+  exit 1
+fi
+
+# Check if directory exists
+if [[ ! -d "${SOURCE_DIR}" ]]; then
+  echo "Error: Directory ${SOURCE_DIR} does not exist"
+  exit 1
+fi
+
+echo "Processing directory: ${SOURCE_DIR}"
+echo ""
+
+# Step 1: Change ownership of all directories to local user
+echo "Step 1: Changing ownership of directories to ${SUDO_USER}..."
+find "${SOURCE_DIR}" -type d -exec chown -R "${SUDO_USER}":"${SUDO_USER}" {} \;
+echo "Ownership changed successfully"
+echo ""
+
+# Step 2: Flatten video files
+echo "Step 2: Flattening video files..."
+
+# Define video file extensions
+VIDEO_EXTENSIONS='mp4\|avi\|mkv'
+FAILED_UPLOADS=()
+
+# Process each top-level directory
+for media_dir in "${SOURCE_DIR}"/*; do
+  if [[ -d "${media_dir}" ]]; then
+    echo "Processing: ${media_dir}"
+    
+    # Find all video files in subdirectories (not in the top directory itself)
+    find "${media_dir}" -type f -iregex ".*\.\(${VIDEO_EXTENSIONS}\)$" | while read -r video_file; do
+      echo "vid file: $video_file"
+      # Get the filename
+      filename=$(basename "${video_file}")
+      
+      # Create destination path in the top directory
+      dest_path="${media_dir}/${filename}"
+      
+      # Handle filename conflicts by adding a counter
+      counter=1
+      while [[ -e "${dest_path}" ]]; do
+          # Get filename without extension
+          name_no_ext="${filename%.*}"
+          extension="${filename##*.}"
+          dest_path="${media_dir}/${name_no_ext}_${counter}.${extension}"
+          ((counter++))
+      done
+      mv "${video_file}" "${dest_path}"
+    done
+
+    # Remove unneeded files/dirs
+    find "${media_dir}" -type f ! -iregex ".*\.\(${VIDEO_EXTENSIONS}\)$" -exec rm -f {} +
+    find "${media_dir}" -mindepth 1 -type d -empty -delete
+  fi
+
+  echo "Video files flattened successfully"
+  echo ""
+  echo "Step 3: Uploading to server..."
+
+  if find "${media_dir}" -mindepth 1 | read; then
+    rsync_cmd="rsync -avz --progress --chown=${SUDO_USER}:${SUDO_USER} \"${media_dir}\" ${SUDO_USER}@nas:${DEST_DIR}/"
+    su - ${SUDO_USER} -c "${rsync_cmd}"
+    if [[ $? -eq 0 ]]; then
+      echo ""
+      echo "Upload completed successfully!"
+      rm -rf "${media_dir}"
+    else
+      FAILED_UPLOADS+=("${media_dir}")
+    fi
+  else
+    FAILED_UPLOADS+=("${media_dir}")
+    rm -rf "${media_dir}"
+  fi
+done
+
+echo ""
+if [[ ${#FAILED_UPLOADS[@]} -gt 0 ]]; then
+  echo "The following directories failed to upload:"
+  for dir in "${FAILED_UPLOADS[@]}"; do
+    echo "  $dir"
+  done
+else
+  echo "All directories synced successfully!"
+fi

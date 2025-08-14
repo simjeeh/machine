@@ -25,3 +25,5 @@ Utility scripts for managing the secrets of the application:
 1. `deploy.sh` – Creates a Pod for this application and deploys all its containers
 1. `stop.sh` – Stops all containers for the application and removes the associated Pod
 1. `restart.sh` – Performs a hard restart by running stop.sh followed by deploy.sh
+## scripts
+This directory contains scripts that I commonly use
