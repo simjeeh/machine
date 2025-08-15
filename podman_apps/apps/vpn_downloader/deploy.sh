@@ -2,12 +2,13 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-POD_DATA_DIR="${HOME}/.podman/vpn-downloader"
+POD_NAME="vpn-downloader"
+POD_DATA_DIR="${HOME}/.podman/${POD_NAME}"
 if [ ! -d "${POD_DATA_DIR}" ]; then
   mkdir -p "${POD_DATA_DIR}"
 fi
 
-podman pod exists vpn-downloader || podman pod create --name vpn-downloader -p 9091:9091
+podman pod exists ${POD_NAME} || podman pod create --name ${POD_NAME} -p 9091:9091
 
 systemctl --user start vpn-downloader-vpn
 systemctl --user enable vpn-downloader-vpn

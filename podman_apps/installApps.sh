@@ -7,7 +7,7 @@ if [[ ${EUID} -ne 0 ]]; then
   exit 1
 fi
 
-SCRIPT_DIR="$(dirname -- "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEMD_USER_DIR="$(getent passwd "${SUDO_USER}" | cut -d: -f6)/.config/systemd/user"
 sudo -u "${SUDO_USER}" mkdir -p ${SYSTEMD_USER_DIR}
 

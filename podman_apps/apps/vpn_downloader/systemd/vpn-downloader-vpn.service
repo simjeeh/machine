@@ -8,5 +8,5 @@ ExecStopPost=/usr/bin/podman rm -f vpn-downloader-vpn
 Restart=always
 
 [Install]
-WantedBy=local.target
+WantedBy=default.target
 
