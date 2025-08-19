@@ -66,7 +66,7 @@ echo ""
 
 # Step 1: Change ownership of all directories to local user
 echo "Step 1: Changing ownership of directories to ${SUDO_USER}..."
-find "${SOURCE_DIR}" -type d -exec chown -R "${SUDO_USER}":"${SUDO_USER}" {} \;
+find "${SOURCE_DIR}" -mindepth 1 -type d -exec chown -R "${SUDO_USER}":"${SUDO_USER}" {} \;
 echo "Ownership changed successfully"
 echo ""
 
@@ -113,8 +113,12 @@ for media_dir in "${SOURCE_DIR}"/*; do
   echo "Step 3: Uploading to server..."
 
   if find "${media_dir}" -mindepth 1 | read; then
-    rsync_cmd="rsync -avz --progress --chown=${SUDO_USER}:${SUDO_USER} \"${media_dir}\" ${SUDO_USER}@nas:${DEST_DIR}/"
+    remote_subdir="$(basename "${media_dir}")"
+    ssh "${SUDO_USER}@nas" "mkdir -p \"${DEST_DIR}/${remote_subdir}\""
+    
+    rsync_cmd="rsync -avz --progress --chown=${SUDO_USER}:${SUDO_USER} \"${media_dir}/\" \"${SUDO_USER}@nas:${DEST_DIR}/${remote_subdir}/\""
     su - ${SUDO_USER} -c "${rsync_cmd}"
+
     if [[ $? -eq 0 ]]; then
       echo ""
       echo "Upload completed successfully!"
