@@ -8,15 +8,16 @@ fi
 
 # Function to show usage
 show_usage() {
-  echo "/Movies"
-  echo "Usage: $0 [-m|-s|-h]"
+  echo "Usage: $0 [-m|-s|-a|-h]"
   echo "  -m    Process Movies directory"
   echo "  -s    Process Shows directory"
+  echo "  -a    Process Audiobooks directory"
   echo "  -h    Show this help"
   echo ""
   echo "Example:"
   echo "  $0 -m"
   echo "  $0 -s"
+  echo "  $0 -a"
   exit 1
 }
 
@@ -26,9 +27,10 @@ DEST_DIR="/mnt/nas/jellyfin"
 
 M_SET=false
 S_SET=false
+A_SET=false
 
 # Parse command line arguments
-while getopts "msh" opt; do
+while getopts "msah" opt; do
   case $opt in
     m)
       SOURCE_DIR="${SOURCE_DIR}/Movies"
@@ -40,6 +42,11 @@ while getopts "msh" opt; do
       DEST_DIR="${DEST_DIR}/Shows"
       S_SET=true
       ;;
+    a)
+      SOURCE_DIR="${SOURCE_DIR}/ABs"
+      DEST_DIR="${DEST_DIR}/Books/Audiobooks"
+      A_SET=true
+      ;;
     h)
       show_usage
       ;;
@@ -50,8 +57,8 @@ while getopts "msh" opt; do
   esac
 done
 
-if { ! ${M_SET} && ! ${S_SET}; } || { ${M_SET} && ${S_SET}; }; then
-  echo "Error: You must provide either -m or -s" >&2
+if { ! ${M_SET} && ! ${S_SET} && ! ${A_SET}; } || { ${M_SET} && ${S_SET} && ${A_SET}; }; then
+  echo "Error: You must provide either -m, -s, or -a" >&2
   exit 1
 fi
 
@@ -70,55 +77,76 @@ find "${SOURCE_DIR}" -mindepth 1 -type d -exec chown -R "${SUDO_USER}":"${SUDO_U
 echo "Ownership changed successfully"
 echo ""
 
-# Step 2: Flatten video files
-echo "Step 2: Flattening video files..."
+if { ${M_SET} || ${S_SET}; }; then
+  # Step 2: Flatten video files
+  echo "Step 2: Flattening video files..."
 
-# Define video file extensions
-VIDEO_EXTENSIONS='mp4\|avi\|mkv'
-FAILED_UPLOADS=()
+  # Define video file extensions
+  VIDEO_EXTENSIONS='mp4\|avi\|mkv'
+  FAILED_UPLOADS=()
 
-# Process each top-level directory
-for media_dir in "${SOURCE_DIR}"/*; do
-  if [[ -d "${media_dir}" ]]; then
-    echo "Processing: ${media_dir}"
-    
-    # Find all video files in subdirectories (not in the top directory itself)
-    find "${media_dir}" -type f -iregex ".*\.\(${VIDEO_EXTENSIONS}\)$" | while read -r video_file; do
-      echo "vid file: $video_file"
-      # Get the filename
-      filename=$(basename "${video_file}")
+  # Process each top-level directory
+  for media_dir in "${SOURCE_DIR}"/*; do
+    if [[ -d "${media_dir}" ]]; then
+      echo "Processing: ${media_dir}"
       
-      # Create destination path in the top directory
-      dest_path="${media_dir}/${filename}"
-      
-      # Handle filename conflicts by adding a counter
-      counter=1
-      while [[ -e "${dest_path}" ]]; do
-          # Get filename without extension
-          name_no_ext="${filename%.*}"
-          extension="${filename##*.}"
-          dest_path="${media_dir}/${name_no_ext}_${counter}.${extension}"
-          ((counter++))
+      # Find all video files in subdirectories (not in the top directory itself)
+      find "${media_dir}" -type f -iregex ".*\.\(${VIDEO_EXTENSIONS}\)$" | while read -r video_file; do
+        echo "vid file: $video_file"
+        # Get the filename
+        filename=$(basename "${video_file}")
+        
+        # Create destination path in the top directory
+        dest_path="${media_dir}/${filename}"
+        
+        # Handle filename conflicts by adding a counter
+        counter=1
+        while [[ -e "${dest_path}" ]]; do
+            # Get filename without extension
+            name_no_ext="${filename%.*}"
+            extension="${filename##*.}"
+            dest_path="${media_dir}/${name_no_ext}_${counter}.${extension}"
+            ((counter++))
+        done
+        mv "${video_file}" "${dest_path}"
       done
-      mv "${video_file}" "${dest_path}"
-    done
 
-    # Remove unneeded files/dirs
-    find "${media_dir}" -type f ! -iregex ".*\.\(${VIDEO_EXTENSIONS}\)$" -exec rm -f {} +
-    find "${media_dir}" -mindepth 1 -type d -empty -delete
-  fi
+      # Remove unneeded files/dirs
+      find "${media_dir}" -type f ! -iregex ".*\.\(${VIDEO_EXTENSIONS}\)$" -exec rm -f {} +
+      find "${media_dir}" -mindepth 1 -type d -empty -delete
+    fi
 
-  echo "Video files flattened successfully"
-  echo ""
-  echo "Step 3: Uploading to server..."
+    echo "Video files flattened successfully"
+    echo ""
+    echo "Step 3: Uploading to server..."
 
-  if find "${media_dir}" -mindepth 1 | read; then
+    if find "${media_dir}" -mindepth 1 | read; then
+      remote_subdir="$(basename "${media_dir}")"
+      mkdir_cmd="ssh nas \"mkdir -p \\\"${DEST_DIR}/${remote_subdir}\\\"\""
+      rsync_cmd="rsync -avz --progress --chown=${SUDO_USER}:${SUDO_USER} \"${media_dir}/\" \"${SUDO_USER}@nas:${DEST_DIR}/${remote_subdir}/\""
+      su - ${SUDO_USER} -c "${mkdir_cmd}"
+      su - ${SUDO_USER} -c "${rsync_cmd}"
+
+      if [[ $? -eq 0 ]]; then
+        echo ""
+        echo "Upload completed successfully!"
+        rm -rf "${media_dir}"
+      else
+        FAILED_UPLOADS+=("${media_dir}")
+      fi
+    else
+      FAILED_UPLOADS+=("${media_dir}")
+      rm -rf "${media_dir}"
+    fi
+  done
+elif { ${A_SET}; }; then
+  echo "Step 2: Uploading to server..."
+  for media_dir in "${SOURCE_DIR}"/*; do
     remote_subdir="$(basename "${media_dir}")"
-    ssh "${SUDO_USER}@nas" "mkdir -p \"${DEST_DIR}/${remote_subdir}\""
-    
+    mkdir_cmd="ssh nas \"mkdir -p \\\"${DEST_DIR}/${remote_subdir}\\\"\""
     rsync_cmd="rsync -avz --progress --chown=${SUDO_USER}:${SUDO_USER} \"${media_dir}/\" \"${SUDO_USER}@nas:${DEST_DIR}/${remote_subdir}/\""
+    su - ${SUDO_USER} -c "${mkdir_cmd}"
     su - ${SUDO_USER} -c "${rsync_cmd}"
-
     if [[ $? -eq 0 ]]; then
       echo ""
       echo "Upload completed successfully!"
@@ -126,11 +154,8 @@ for media_dir in "${SOURCE_DIR}"/*; do
     else
       FAILED_UPLOADS+=("${media_dir}")
     fi
-  else
-    FAILED_UPLOADS+=("${media_dir}")
-    rm -rf "${media_dir}"
-  fi
-done
+  done
+fi
 
 echo ""
 if [[ ${#FAILED_UPLOADS[@]} -gt 0 ]]; then
