@@ -1,47 +1,62 @@
 #!/bin/bash
+set -euo pipefail
 
-# --- Require root ---
-if [[ ${EUID} -ne 0 ]]; then
-  echo "❌ This script must be run as root."
-  echo "💡 Try: sudo $0"
+if [[ ${EUID} -eq 0 ]]; then
+  echo "❌ Do not run this as root. Run as your regular user."
   exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SYSTEMD_USER_DIR="$(getent passwd "${SUDO_USER}" | cut -d: -f6)/.config/systemd/user"
-sudo -u "${SUDO_USER}" mkdir -p ${SYSTEMD_USER_DIR}
+QUADLETS_DIR="${HOME}/.config/containers/systemd"
+
+mkdir -p "${QUADLETS_DIR}"
+sudo mkdir -p /mnt/podman
+sudo chown -R "${USER}:${USER}" /mnt/podman
+loginctl enable-linger "${USER}"
+
+installed_apps=()
 
 for app_dir in "${SCRIPT_DIR}"/apps/*; do
+  [[ -d "${app_dir}" ]] || continue
   app_name="$(basename "${app_dir}")"
-  echo "Installing app: ${app_name}"
-  
-  containers_dir="${app_dir}/containers"
-  if [[ -d "${containers_dir}" ]]; then
-    target_opt="/opt/${app_name}"
-    sudo mkdir -p "${target_opt}"
-    for script in "${containers_dir}"/*; do
-      if [[ -f "${script}" ]]; then
-        script_name=$(basename "${script}")
-	      script_abs="$(readlink -f "${script}")"
-        sudo ln -sf "${script_abs}" "${target_opt}/${script_name}"
-        chmod +x "${target_opt}/${script_name}"
-        echo "  Linked container script: ${script_name} -> ${target_opt}"
-      fi
+  echo "📦 Installing app: ${app_name}"
+
+  containers_src="${app_dir}/containers"
+  if [[ -d "${containers_src}" ]]; then
+    target_dir="/mnt/podman/${app_name}/containers"
+    mkdir -p "${target_dir}"
+    for file in "${containers_src}"/*; do
+      [[ -f "${file}" ]] || continue
+      file_name="$(basename "${file}")"
+      file_abs="$(readlink -f "${file}")"
+      ln -sf "${file_abs}" "${target_dir}/${file_name}"
+      echo "  🔗 Linked container def: ${file_name} → ${target_dir}"
     done
   fi
 
-  systemd_dir="${app_dir}/systemd"
-  if [[ -d "${systemd_dir}" ]]; then
-    for service in "${systemd_dir}"/*; do
-      if [[ -f "${service}" ]]; then
-        service_name=$(basename "${service}")
-        service_abs="$(readlink -f "${service}")"
-        sudo ln -sf "${service_abs}" ${SYSTEMD_USER_DIR}/${service_name}
-        echo "  Linked systemd unit: ${service_name} -> ${SYSTEMD_USER_DIR}"
-      fi
+  quadlets_src="${app_dir}/quadlets"
+  if [[ -d "${quadlets_src}" ]]; then
+    for file in "${quadlets_src}"/*; do
+      [[ -f "${file}" ]] || continue
+      file_name="$(basename "${file}")"
+      file_abs="$(readlink -f "${file}")"
+      ln -sf "${file_abs}" "${QUADLETS_DIR}/${file_name}"
+      echo "  🔗 Linked quadlet: ${file_name} → ${QUADLETS_DIR}"
     done
   fi
+
+  installed_apps+=("${app_name}")
 done
 
-echo "To reload systemd daemon, run:"
-echo "  systemctl --user daemon-reload"
+echo ""
+echo "🔄 Reloading systemd daemon..."
+systemctl --user daemon-reload
+
+echo ""
+for app_name in "${installed_apps[@]}"; do
+  echo "🚀 Deploying ${app_name}..."
+  systemctl --user enable --now "${app_name}" 2>/dev/null || systemctl --user restart "${app_name}"
+done
+
+echo ""
+echo "✅ All apps installed and deployed."

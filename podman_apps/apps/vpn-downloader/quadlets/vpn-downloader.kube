@@ -1,0 +1,14 @@
+[Unit]
+Description=VPN Downloader Pod
+After=network-online.target
+Wants=network-online.target
+
+[Kube]
+Yaml=/mnt/podman/vpn-downloader/containers/secrets.yaml
+Yaml=/mnt/podman/vpn-downloader/containers/vpn-downloader.yaml
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
