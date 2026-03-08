@@ -9,6 +9,23 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUADLETS_DIR="${HOME}/.config/containers/systemd"
 
+link_files() {
+  local src_dir="$1"
+  local target_dir="$2"
+  local label="$3"
+
+  [[ -d "${src_dir}" ]] || return 0
+
+  mkdir -p "${target_dir}"
+  for file in "${src_dir}"/*; do
+    [[ -f "${file}" ]] || continue
+    file_name="$(basename "${file}")"
+    file_abs="$(readlink -f "${file}")"
+    ln -sf "${file_abs}" "${target_dir}/${file_name}"
+    echo "  🔗 Linked ${label}: ${file_name} → ${target_dir}"
+  done
+}
+
 mkdir -p "${QUADLETS_DIR}"
 sudo mkdir -p /mnt/podman
 sudo chown -R "${USER}:${USER}" /mnt/podman
@@ -21,29 +38,9 @@ for app_dir in "${SCRIPT_DIR}"/apps/*; do
   app_name="$(basename "${app_dir}")"
   echo "📦 Installing app: ${app_name}"
 
-  containers_src="${app_dir}/containers"
-  if [[ -d "${containers_src}" ]]; then
-    target_dir="/mnt/podman/${app_name}/containers"
-    mkdir -p "${target_dir}"
-    for file in "${containers_src}"/*; do
-      [[ -f "${file}" ]] || continue
-      file_name="$(basename "${file}")"
-      file_abs="$(readlink -f "${file}")"
-      ln -sf "${file_abs}" "${target_dir}/${file_name}"
-      echo "  🔗 Linked container def: ${file_name} → ${target_dir}"
-    done
-  fi
-
-  quadlets_src="${app_dir}/quadlets"
-  if [[ -d "${quadlets_src}" ]]; then
-    for file in "${quadlets_src}"/*; do
-      [[ -f "${file}" ]] || continue
-      file_name="$(basename "${file}")"
-      file_abs="$(readlink -f "${file}")"
-      ln -sf "${file_abs}" "${QUADLETS_DIR}/${file_name}"
-      echo "  🔗 Linked quadlet: ${file_name} → ${QUADLETS_DIR}"
-    done
-  fi
+  link_files "${app_dir}/containers" "/mnt/podman/${app_name}/containers" "container def"
+  link_files "${app_dir}/quadlets"   "${QUADLETS_DIR}"                    "quadlet"
+  link_files "${app_dir}/scripts"    "/mnt/podman/${app_name}/scripts"    "script"
 
   installed_apps+=("${app_name}")
 done
@@ -54,6 +51,12 @@ systemctl --user daemon-reload
 
 echo ""
 for app_name in "${installed_apps[@]}"; do
+  manage_secrets="/mnt/podman/${app_name}/manageSecrets.sh"
+  if [[ -f "${manage_secrets}" ]]; then
+    echo "🔑 Checking secrets for ${app_name}..."
+    "${manage_secrets}" --check
+  fi
+
   echo "🚀 Deploying ${app_name}..."
   systemctl --user enable --now "${app_name}" 2>/dev/null || systemctl --user restart "${app_name}"
 done

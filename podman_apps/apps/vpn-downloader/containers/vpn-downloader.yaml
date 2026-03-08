@@ -3,7 +3,7 @@ kind: Pod
 metadata:
   name: vpn-downloader
   labels:
-    group: vpn-downloader
+    stack: vpn-downloader
 spec:
   containers:
     - name: gluetun

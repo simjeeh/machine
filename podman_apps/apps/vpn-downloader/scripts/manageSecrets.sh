@@ -7,7 +7,18 @@ if ! command -v jq &>/dev/null; then
   echo "✅ jq installed"
 fi
 
-SECRETS_FILE="/mnt/podman/vpn-downloader/containers/secrets.yaml"
+SECRETS_DIR="/mnt/podman/vpn-downloader/secrets"
+SECRETS_FILE="${SECRETS_DIR}/secrets.yaml"
+mkdir -p ${SECRETS_DIR}
+
+# --check mode: skip if secrets file already exists
+if [[ "${1:-}" == "--check" ]]; then
+  if [[ -f "${SECRETS_FILE}" ]]; then
+    echo "  ✅ Secrets already exist, skipping"
+    exit 0
+  fi
+  echo "  ⚠️  Secrets not found, prompting for input..."
+fi
 
 read -r -p "Enter VPN username (Private Internet Access in Bitwarden): " vpn_user
 read -r -p "Enter VPN password (Private Internet Access in Bitwarden): " vpn_password
