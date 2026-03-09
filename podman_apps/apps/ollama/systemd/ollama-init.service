@@ -1,0 +1,23 @@
+[Unit]
+Description=Pull Ollama models
+After=ollama.service
+Requires=ollama.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '\
+  MODELS_FILE="/mnt/podman/ollama/config/models.txt"; \
+  echo "Waiting for ollama to be ready..."; \
+  until podman exec ollama-ollama ollama list &>/dev/null; do sleep 2; done; \
+  while IFS= read -r model || [[ -n "$$model" ]]; do \
+    [[ -z "$$model" || "$$model" =~ ^\# ]] && continue; \
+    if podman exec ollama-ollama ollama list | grep -q "$$model"; then \
+      echo "✅ $$model already exists, skipping pull"; \
+    else \
+      echo "⬇️  Pulling $$model..."; \
+      podman exec ollama-ollama ollama pull "$$model"; \
+    fi; \
+  done < "$$MODELS_FILE"'
+
+[Install]
+WantedBy=default.target

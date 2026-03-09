@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ollama
+  labels:
+    stack: ollama
+  annotations:
+    io.kubernetes.cri-o.Devices: "nvidia.com/gpu=all"
+spec:
+  containers:
+    - name: ollama
+      # https://hub.docker.com/r/ollama/ollama/tags
+      image: docker.io/ollama/ollama:0.17.7
+      env:
+        - name: OLLAMA_KEEP_ALIVE
+          value: "24h"
+        - name: OLLAMA_MAX_LOADED_MODELS
+          value: "1"
+        - name: OLLAMA_NUM_PARALLEL
+          value: "1"
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: "compute,utility"
+      ports:
+        - containerPort: 11434
+          hostPort: 11434
+          protocol: TCP
+      resources:
+        limits:
+          memory: "10Gi"
+          cpu: "4000m"
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+      volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+
+    - name: open-webui
+      # https://github.com/open-webui/open-webui/tags
+      image: ghcr.io/open-webui/open-webui:0.8.9
+      env:
+        - name: OLLAMA_BASE_URL
+          value: "http://localhost:11434"
+        - name: WEBUI_AUTH
+          value: "true"
+        - name: WEBUI_ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: ollama-secrets
+              key: WEBUI_ADMIN_EMAIL
+        - name: WEBUI_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ollama-secrets
+              key: WEBUI_ADMIN_PASSWORD
+      ports:
+        - containerPort: 8080
+          hostPort: 8080
+          protocol: TCP
+      resources:
+        limits:
+          memory: "1Gi"
+          cpu: "1000m"
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+      volumeMounts:
+        - name: open-webui-data
+          mountPath: /app/backend/data
+
+  volumes:
+    - name: ollama-data
+      hostPath:
+        path: /mnt/podman/ollama/.data/models
+        type: DirectoryOrCreate
+    - name: open-webui-data
+      hostPath:
+        path: /mnt/podman/ollama/.data/open-webui
+        type: DirectoryOrCreate

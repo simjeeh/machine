@@ -8,6 +8,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUADLETS_DIR="${HOME}/.config/containers/systemd"
+SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 
 link_files() {
   local src_dir="$1"
@@ -27,6 +28,7 @@ link_files() {
 }
 
 mkdir -p "${QUADLETS_DIR}"
+mkdir -p "${SYSTEMD_USER_DIR}"
 sudo mkdir -p /mnt/podman
 sudo chown -R "${USER}:${USER}" /mnt/podman
 loginctl enable-linger "${USER}"
@@ -40,7 +42,9 @@ for app_dir in "${SCRIPT_DIR}"/apps/*; do
 
   link_files "${app_dir}/containers" "/mnt/podman/${app_name}/containers" "container def"
   link_files "${app_dir}/quadlets"   "${QUADLETS_DIR}"                    "quadlet"
-  link_files "${app_dir}/scripts"    "/mnt/podman/${app_name}/scripts"    "script"
+  link_files "${app_dir}/systemd"    "${SYSTEMD_USER_DIR}"                "systemd unit"
+  link_files "${app_dir}/scripts"    "/mnt/podman/${app_name}"            "script"
+  link_files "${app_dir}/config"     "/mnt/podman/${app_name}/config"     "config file"
 
   installed_apps+=("${app_name}")
 done
@@ -59,6 +63,19 @@ for app_name in "${installed_apps[@]}"; do
 
   echo "🚀 Deploying ${app_name}..."
   systemctl --user enable --now "${app_name}" 2>/dev/null || systemctl --user restart "${app_name}"
+
+  init_service="${SYSTEMD_USER_DIR}/${app_name}-init.service"
+  if [[ -f "${init_service}" ]]; then
+    echo "⚙️  Starting init service for ${app_name}..."
+    systemctl --user enable "${app_name}-init"
+    systemctl --user start "${app_name}-init" &
+  fi
+
+  prune_timer="${SYSTEMD_USER_DIR}/${app_name}-prune.timer"
+  if [[ -f "${prune_timer}" ]]; then
+    echo "🗑️  Enabling prune timer for ${app_name}..."
+    systemctl --user enable --now "${app_name}-prune.timer" 2>/dev/null || true
+  fi
 done
 
 echo ""

@@ -1,0 +1,15 @@
+[Unit]
+Description=Ollama AI Server
+After=network-online.target
+Wants=network-online.target
+
+[Kube]
+Yaml=/mnt/podman/ollama/secrets/secrets.yaml
+Yaml=/mnt/podman/ollama/containers/ollama.yaml
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

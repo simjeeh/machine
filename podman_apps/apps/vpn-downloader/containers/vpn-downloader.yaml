@@ -7,7 +7,8 @@ metadata:
 spec:
   containers:
     - name: gluetun
-      image: ghcr.io/qdm12/gluetun
+      # https://github.com/qdm12/gluetun/tags
+      image: ghcr.io/qdm12/gluetun:v3.41.1
       securityContext:
         capabilities:
           add:
@@ -43,7 +44,8 @@ spec:
           mountPath: /dev/net/tun
 
     - name: transmission
-      image: lscr.io/linuxserver/transmission
+      # https://github.com/linuxserver/docker-transmission/pkgs/container/transmission/versions?filters%5Bversion_type%5D=tagged
+      image: lscr.io/linuxserver/transmission:4.1.1
       resources:
         limits:
           memory: "1Gi"
