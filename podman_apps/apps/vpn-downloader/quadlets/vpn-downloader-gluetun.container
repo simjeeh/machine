@@ -1,0 +1,27 @@
+[Unit]
+Description=Gluetun VPN Container
+After=vpn-downloader-pod.service
+Requires=vpn-downloader-pod.service
+
+[Container]
+# https://github.com/qdm12/gluetun/tags
+Image=ghcr.io/qdm12/gluetun:v3.41.1
+ContainerName=vpn-downloader-gluetun
+Pod=vpn-downloader.pod
+AddCapability=NET_ADMIN
+AddDevice=/dev/net/tun
+Environment=VPN_SERVICE_PROVIDER="private internet access"
+Environment=SERVER_REGIONS=Netherlands
+Environment=FIREWALL=on
+Environment=FIREWALL_OUTBOUND_SUBNETS=192.168.1.0/24
+Environment=FIREWALL_INPUT_PORTS=9091
+Secret=vpn-downloader-openvpn-user,type=env,target=OPENVPN_USER
+Secret=vpn-downloader-openvpn-password,type=env,target=OPENVPN_PASSWORD
+
+[Service]
+Restart=always
+MemoryMax=512M
+CPUQuota=200%
+
+[Install]
+WantedBy=default.target

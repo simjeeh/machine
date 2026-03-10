@@ -1,0 +1,21 @@
+[Unit]
+Description=Open WebUI
+After=ollama.service
+Requires=ollama.service
+
+[Container]
+# https://github.com/open-webui/open-webui/tags
+Image=ghcr.io/open-webui/open-webui:0.8.10
+ContainerName=ollama-open-webui
+Pod=ollama.pod
+Environment=OLLAMA_BASE_URL=http://127.0.0.1:11434
+Environment=WEBUI_AUTH=true
+Secret=ollama-webui-email,type=env,target=WEBUI_ADMIN_EMAIL
+Secret=ollama-webui-password,type=env,target=WEBUI_ADMIN_PASSWORD
+Volume=/mnt/podman/ollama/.data/open-webui:/app/backend/data:Z
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

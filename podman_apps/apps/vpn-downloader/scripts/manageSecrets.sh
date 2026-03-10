@@ -3,37 +3,49 @@ set -euo pipefail
 
 if ! command -v jq &>/dev/null; then
   echo "📦 jq not found, installing..."
-  sudo apt install -y jq
+  sudo dnf install -y jq || sudo apt install -y jq
   echo "✅ jq installed"
 fi
 
-SECRETS_DIR="/mnt/podman/vpn-downloader/secrets"
-SECRETS_FILE="${SECRETS_DIR}/secrets.yaml"
-mkdir -p ${SECRETS_DIR}
+create_or_overwrite_secret() {
+  local secret_name="$1"
+  local prompt="$2"
 
-# --check mode: skip if secrets file already exists
+  if podman secret inspect "${secret_name}" &>/dev/null; then
+    if [[ "${CHECK_MODE}" == "true" ]]; then
+      echo "  ✅ Secret '${secret_name}' already exists, skipping"
+      return
+    fi
+    read -r -p "Secret '${secret_name}' already exists. Overwrite? (y/N): " choice
+    case "$choice" in
+      [yY][eE][sS]|[yY]) podman secret rm "${secret_name}" >/dev/null ;;
+      *) echo "Skipping ${secret_name}"; return ;;
+    esac
+  fi
+
+  read -r -s -p "${prompt}: " value
+  echo
+  echo -n "${value}" | podman secret create "${secret_name}" -
+  echo "  ✅ Created secret: ${secret_name}"
+}
+
+CHECK_MODE=false
 if [[ "${1:-}" == "--check" ]]; then
-  if [[ -f "${SECRETS_FILE}" ]]; then
+  CHECK_MODE=true
+fi
+
+if [[ "${CHECK_MODE}" == "true" ]]; then
+  if podman secret inspect vpn-downloader-openvpn-user &>/dev/null && \
+     podman secret inspect vpn-downloader-openvpn-password &>/dev/null && \
+     podman secret inspect vpn-downloader-transmission-password &>/dev/null; then
     echo "  ✅ Secrets already exist, skipping"
     exit 0
   fi
   echo "  ⚠️  Secrets not found, prompting for input..."
 fi
 
-read -r -p "Enter VPN username (Private Internet Access in Bitwarden): " vpn_user
-read -r -p "Enter VPN password (Private Internet Access in Bitwarden): " vpn_password
-read -r -p "Enter Transmission RPC password (Transmission in Bitwarden): " transmission_password
+create_or_overwrite_secret "vpn-downloader-openvpn-user" "Enter VPN username (Private Internet Access in Bitwarden)"
+create_or_overwrite_secret "vpn-downloader-openvpn-password" "Enter VPN password (Private Internet Access in Bitwarden)"
+create_or_overwrite_secret "vpn-downloader-transmission-password" "Enter Transmission RPC password (Transmission in Bitwarden)"
 
-cat > "${SECRETS_FILE}" <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: vpn-downloader-secrets
-data:
-  OPENVPN_USER: $(echo -n "${vpn_user}" | base64 -w 0)
-  OPENVPN_PASSWORD: $(echo -n "${vpn_password}" | base64 -w 0)
-  TRANSMISSION_RPC_PASSWORD: $(echo -n "${transmission_password}" | base64 -w 0)
-EOF
-
-chmod 600 "${SECRETS_FILE}"
-echo "✅ Secrets written to ${SECRETS_FILE}"
+echo "✅ All secrets processed."
