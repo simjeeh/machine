@@ -3,7 +3,7 @@ set -euo pipefail
 
 if ! command -v jq &>/dev/null; then
   echo "📦 jq not found, installing..."
-  sudo dnf install -y jq || sudo apt install -y jq
+  sudo dnf install -y jq
   echo "✅ jq installed"
 fi
 
@@ -35,17 +35,15 @@ if [[ "${1:-}" == "--check" ]]; then
 fi
 
 if [[ "${CHECK_MODE}" == "true" ]]; then
-  if podman secret inspect vpn-downloader-openvpn-user &>/dev/null && \
-     podman secret inspect vpn-downloader-openvpn-password &>/dev/null && \
-     podman secret inspect vpn-downloader-transmission-password &>/dev/null; then
+  if podman secret inspect ollama-webui-email &>/dev/null && \
+     podman secret inspect ollama-webui-password &>/dev/null; then
     echo "  ✅ Secrets already exist, skipping"
     exit 0
   fi
   echo "  ⚠️  Secrets not found, prompting for input..."
 fi
 
-create_or_overwrite_secret "vpn-downloader-openvpn-user" "Enter VPN username (Private Internet Access in Bitwarden)"
-create_or_overwrite_secret "vpn-downloader-openvpn-password" "Enter VPN password (Private Internet Access in Bitwarden)"
-create_or_overwrite_secret "vpn-downloader-transmission-password" "Enter Transmission RPC password (Transmission in Bitwarden)"
+create_or_overwrite_secret "ollama-webui-email" "Enter Open WebUI admin email (Ollama in BitWarden)"
+create_or_overwrite_secret "ollama-webui-password" "Enter Open WebUI admin password (Ollama in BitWarden)"
 
 echo "✅ All secrets processed."

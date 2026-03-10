@@ -1,0 +1,15 @@
+[Unit]
+Description=Prune unused Podman resources for ollama
+After=ollama.service
+
+[Service]
+Type=oneshot
+ExecStart=podman system prune -f
+ExecStartPost=/bin/bash -c '\
+  MODELS_FILE="/mnt/podman/ollama/config/models.txt"; \
+  KEEP_PATTERN=$(grep -v "^#" "${MODELS_FILE}" | grep -v "^$" | paste -sd"|"); \
+  echo "Pruning unused ollama models..."; \
+  for model in $(podman exec ollama-ollama ollama list | tail -n +2 | awk "{print \$1}" | grep -vE "${KEEP_PATTERN}"); do \
+    echo "Removing unused model: $model"; \
+    podman exec ollama-ollama ollama rm "$model"; \
+  done'

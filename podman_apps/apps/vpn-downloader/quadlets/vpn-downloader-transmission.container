@@ -1,0 +1,23 @@
+[Unit]
+Description=Transmission Container
+After=vpn-downloader-gluetun.service
+Requires=vpn-downloader-gluetun.service
+
+[Container]
+# https://github.com/linuxserver/docker-transmission/pkgs/container/transmission/versions?filters%5Bversion_type%5D=tagged
+Image=lscr.io/linuxserver/transmission:4.1.1
+ContainerName=vpn-downloader-transmission
+Pod=vpn-downloader.pod
+Environment=USER=simjeeh
+Environment=TZ=America/Los_Angeles
+Secret=vpn-downloader-transmission-password,type=env,target=PASS
+Volume=/mnt/podman/vpn-downloader/.data/downloads:/downloads:Z
+Volume=/mnt/podman/vpn-downloader/.data/config:/config:Z
+
+[Service]
+Restart=always
+MemoryMax=1G
+CPUQuota=200%
+
+[Install]
+WantedBy=default.target

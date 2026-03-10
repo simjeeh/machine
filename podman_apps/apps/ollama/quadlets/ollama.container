@@ -1,0 +1,22 @@
+[Unit]
+Description=Ollama AI Server
+After=ollama-pod.service
+Requires=ollama-pod.service
+
+[Container]
+# https://hub.docker.com/r/ollama/ollama/tags
+Image=docker.io/ollama/ollama:0.17.7
+ContainerName=ollama-ollama
+Pod=ollama.pod
+AddDevice=nvidia.com/gpu=all
+Environment=OLLAMA_KEEP_ALIVE=24h
+Environment=OLLAMA_MAX_LOADED_MODELS=1
+Environment=OLLAMA_NUM_PARALLEL=1
+Volume=/mnt/podman/ollama/.data/models:/root/.ollama:Z
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
