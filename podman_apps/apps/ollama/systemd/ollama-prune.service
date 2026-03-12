@@ -1,6 +1,7 @@
 [Unit]
 Description=Prune unused Podman resources for ollama
 After=ollama.service
+Requires=ollama.service
 
 [Service]
 Type=oneshot

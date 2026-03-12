@@ -8,7 +8,7 @@ Requires=ollama.service
 Image=ghcr.io/open-webui/open-webui:0.8.10
 ContainerName=ollama-open-webui
 Pod=ollama.pod
-Environment=OLLAMA_BASE_URL=http://127.0.0.1:11434
+Environment=OLLAMA_BASE_URL=http://0.0.0.0:11434
 Environment=WEBUI_AUTH=true
 Secret=ollama-webui-email,type=env,target=WEBUI_ADMIN_EMAIL
 Secret=ollama-webui-password,type=env,target=WEBUI_ADMIN_PASSWORD

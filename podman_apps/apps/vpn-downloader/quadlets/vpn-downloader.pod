@@ -1,6 +1,6 @@
 [Pod]
 PodName=vpn-downloader
-PublishPort=127.0.0.1:9091:9091
+PublishPort=0.0.0.0:9091:9091
 
 [Install]
 WantedBy=default.target

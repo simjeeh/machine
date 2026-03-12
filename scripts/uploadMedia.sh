@@ -22,7 +22,7 @@ show_usage() {
 }
 
 # Initialize variables
-SOURCE_DIR="/home/${SUDO_USER}/.podman/vpn_downloader/downloads/complete"
+SOURCE_DIR="/mnt/podman/vpn-downloader/.data/downloads/complete"
 DEST_DIR="/mnt/nas/jellyfin"
 
 M_SET=false
