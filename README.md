@@ -13,5 +13,5 @@ This repository contains scripts and configuration files for setting up and mana
 * Darktable
 * Ente
 * Spotify
-## podman_apps
-See the [podman_apps README](podman_apps/README.md)
+## podman
+See the [podman README](podman/README.md)

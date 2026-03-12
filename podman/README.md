@@ -1,4 +1,4 @@
-# podman_apps
+# podman
 
 This directory contains configuration, deployment, and management scripts for containerized applications running via Podman with systemd quadlets on Fedora.
 
@@ -78,7 +78,7 @@ podman run --rm \
 ### 4. Install apps
 ```bash
 git clone <your-repo>
-cd podman_apps
+cd podman
 ./installApps.sh
 ```
 

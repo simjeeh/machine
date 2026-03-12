@@ -2,6 +2,8 @@
 Description=Ollama AI Server
 After=ollama-pod.service
 Requires=ollama-pod.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Container]
 # https://hub.docker.com/r/ollama/ollama/tags
@@ -15,7 +17,9 @@ Environment=OLLAMA_NUM_PARALLEL=1
 Volume=/mnt/podman/ollama/.data/models:/root/.ollama:Z
 
 [Service]
+ExecStartPre=/bin/bash -c 'until ls /dev/nvidia-uvm &>/dev/null; do echo "Waiting for nvidia-uvm..."; sleep 1; done'
 Restart=always
+RestartSec=30
 TimeoutStartSec=300
 
 [Install]

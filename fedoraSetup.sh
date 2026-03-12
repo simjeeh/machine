@@ -134,8 +134,10 @@ printf '#!/bin/sh\n\nethtool -K %s rx-udp-gro-forwarding on rx-gro-list off\n' "
     | tee /etc/networkd-dispatcher/routable.d/50-tailscale
 chmod 755 /etc/networkd-dispatcher/routable.d/50-tailscale
 
-# Bring Tailscale up and advertise this machine's IP.
-# This config persists across reboots — no need for a separate systemd unit.
+# Authenticate with Tailscale (opens browser or prints a login URL)
+tailscale login
+
+# Bring Tailscale up and advertise this machine's IP
 LOCAL_IP=$(hostname -I | awk '{print $1}')
 tailscale up --advertise-routes="${LOCAL_IP}/32"
 
@@ -156,7 +158,7 @@ else
     sudo -u "${SUDO_USER}" \
         XDG_RUNTIME_DIR="/run/user/${USER_ID}" \
         DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${USER_ID}/bus" \
-        bash "${SCRIPT_DIR}/podman_apps/installApps.sh"
+        bash "${SCRIPT_DIR}/podman/installApps.sh"
     ok "Podman apps installed"
 fi
 

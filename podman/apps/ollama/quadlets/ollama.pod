@@ -2,6 +2,7 @@
 PodName=ollama
 PublishPort=0.0.0.0:11434:11434
 PublishPort=0.0.0.0:8080:8080
+PodmanArgs=--exit-policy=continue
 
 [Install]
 WantedBy=default.target
