@@ -89,12 +89,27 @@ ok "Firmware check complete"
 # 7. Software Installation
 # =============================================================================
 
+# ── Provide VSCodium related repository ───────────────────────────────────────
+step "Provide VSCodium related repository"
+tee -a /etc/yum.repos.d/vscodium.repo << 'EOF'
+[gitlab.com_paulcarroty_vscodium_repo]
+name=gitlab.com_paulcarroty_vscodium_repo
+baseurl=https://paulcarroty.gitlab.io/vscodium-deb-rpm-repo/rpms/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/raw/master/pub.gpg
+metadata_expire=1h
+EOF
+ok "VSCodium related repository provided"
+
 # ── DNF packages ──────────────────────────────────────────────────────────────
-step "Installing DNF packages (NVIDIA drivers + Podman)"
+step "Installing DNF packages"
 dnf install -y \
     akmod-nvidia \
     xorg-x11-drv-nvidia-cuda \
-    podman
+    podman \
+    codium
 ok "DNF packages installed"
 
 # ── Flatpak apps ─────────────────────────────────────────────────────────────
@@ -104,7 +119,6 @@ flatpak install -y \
     com.brave.Browser \
     com.spotify.Client \
     com.sublimehq.SublimeText \
-    com.visualstudio.code \
     io.ente.photos \
     org.darktable.Darktable \
     org.signal.Signal \
