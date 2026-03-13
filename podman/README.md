@@ -1,6 +1,6 @@
 # podman
 
-This directory contains configuration, deployment, and management scripts for containerized applications running via Podman with systemd quadlets on Fedora.
+This directory contains configuration, deployment, and management scripts for containerized applications running via Podman with systemd quadlets on Fedora
 
 ---
 
@@ -85,7 +85,7 @@ cd podman
 `installApps.sh` will:
 - Validate `/mnt/podman` exists and is writable
 - Create all required `.data` subdirectories
-- Symlink all quadlets, scripts, and config files into their target locations
+- Symlink all quadlets, systemd units, scripts, config files, and container definitions into their target locations
 - Reload systemd
 - Prompt for any missing secrets
 - Start all apps
@@ -98,13 +98,13 @@ git pull
 ./installApps.sh
 ```
 
-`installApps.sh` is idempotent — it can be run as many times as needed. It recreates all symlinks, reloads systemd, and restarts all apps to pick up any changes.
+`installApps.sh` is idempotent — it can be run as many times as needed. It recreates all symlinks, reloads systemd, and restarts all apps to pick up any changes
 
 ---
 
 ## Managing applications
 
-Apps are composed of multiple systemd units — a pod unit and one or more container units. Manage them individually with `systemctl --user`.
+Apps are composed of multiple systemd units — a pod unit and one or more container units. Manage them individually with `systemctl --user`
 
 **Start:**
 ```bash
@@ -160,27 +160,40 @@ apps/
 └── <app-name>/
     ├── .data-dirs        # list of subdirs to create under /mnt/podman/<app>/.data/
     ├── quadlets/         # .pod and .container quadlet files
+    ├── systemd/          # plain systemd unit files (e.g. init services, prune timers)
     ├── scripts/          # manageSecrets.sh and other management scripts
-    └── config/           # config files (e.g. nginx.conf, models.txt)
+    ├── config/           # config files (e.g. nginx.conf, models.txt)
+    └── containers/       # container definition files
 ```
 
+Not every app uses every directory. `installApps.sh` silently skips any that are absent
+
 ### `quadlets/`
-Contains quadlet unit files (`.pod`, `.container`) that tell systemd how to manage the application. Systemd generates `.service` units from these automatically after `daemon-reload`. Symlinked into `~/.config/containers/systemd/` by `installApps.sh`.
+Contains quadlet unit files (`.pod`, `.container`) that tell systemd how to manage the application. Systemd generates `.service` units from these automatically after `daemon-reload`. Symlinked into `~/.config/containers/systemd/` by `installApps.sh`
 
 Each app typically has:
 - **`<app>.pod`** — defines the pod and port bindings. Generates `<app>-pod.service`
 - **`<app>-<container>.container`** — defines each container in the pod. Generates `<app>-<container>.service`
 
+### `systemd/`
+Contains plain systemd unit files that are not quadlets. Symlinked into `~/.config/systemd/user/` by `installApps.sh`. Used for units that need to run outside the quadlet lifecycle, such as:
+
+- **`<app>-init.service`** — a one-shot service run at install time to perform any first-run setup (e.g. seeding config, pulling models). Started asynchronously by `installApps.sh` after the app is deployed
+- **`<app>-prune.timer`** + **`<app>-prune.service`** — a timer/service pair that periodically cleans up unused images or data. The timer is enabled and started by `installApps.sh` automatically
+
 ### `scripts/`
-Contains management scripts. Symlinked into `/mnt/podman/<app>/scripts/` by `installApps.sh`.
+Contains management scripts. Symlinked into `/mnt/podman/<app>/scripts/` by `installApps.sh`
 
 - **`manageSecrets.sh`** — creates podman secrets for the app. Run with `--check` to only create if missing, or with no flags to prompt for all values
 
 ### `config/`
-Contains config files mounted into containers. Symlinked into `/mnt/podman/<app>/config/` by `installApps.sh`.
+Contains config files mounted into containers. Symlinked into `/mnt/podman/<app>/config/` by `installApps.sh`
+
+### `containers/`
+Contains container definition files. Symlinked into `/mnt/podman/<app>/containers/` by `installApps.sh`
 
 ### `.data-dirs`
-A plain text file listing subdirectories to create under `/mnt/podman/<app>/.data/`. One directory per line. Comments start with `#`. Created automatically by `installApps.sh` on every run.
+A plain text file listing subdirectories to create under `/mnt/podman/<app>/.data/`. One directory per line. Comments start with `#`. Created automatically by `installApps.sh` on every run
 
 Example:
 ```
@@ -198,18 +211,22 @@ Performs the following actions:
 1. **Validates `/mnt/podman`** — exits with a clear error if the directory doesn't exist or isn't writable
 2. **Enables linger** — runs `loginctl enable-linger` so rootless containers survive logout
 3. **Creates `.data` directories** — reads `.data-dirs` per app and creates all required subdirs under `/mnt/podman/<app>/.data/`
-4. **Symlinks quadlets** — links all files in `apps/*/quadlets/` into `~/.config/containers/systemd/`
-5. **Symlinks scripts** — links all files in `apps/*/scripts/` into `/mnt/podman/<app>/scripts/`
-6. **Symlinks config** — links all files in `apps/*/config/` into `/mnt/podman/<app>/config/`
-7. **Reloads systemd** — runs `systemctl --user daemon-reload` once after all symlinks are created
-8. **Checks secrets** — runs `manageSecrets.sh --check` for any app that has one, prompting for input if secrets are missing
-9. **Deploys all units** — starts all `.pod`, `.container`, and `.kube` units found in each app's `quadlets/` directory
+4. **Symlinks container definitions** — links all files in `apps/*/containers/` into `/mnt/podman/<app>/containers/`
+5. **Symlinks quadlets** — links all files in `apps/*/quadlets/` into `~/.config/containers/systemd/`
+6. **Symlinks systemd units** — links all files in `apps/*/systemd/` into `~/.config/systemd/user/`
+7. **Symlinks scripts** — links all files in `apps/*/scripts/` into `/mnt/podman/<app>/scripts/`
+8. **Symlinks config** — links all files in `apps/*/config/` into `/mnt/podman/<app>/config/`
+9. **Reloads systemd** — runs `systemctl --user daemon-reload` once after all symlinks are created
+10. **Checks secrets** — runs `manageSecrets.sh --check` for any app that has one, prompting for input if secrets are missing
+11. **Deploys quadlet units** — enables and starts all `.pod`, `.container`, and `.kube` units found in each app's `quadlets/` directory
+12. **Starts init service** — if `<app>-init.service` exists in `systemd/`, enables and starts it asynchronously
+13. **Enables prune timer** — if `<app>-prune.timer` exists in `systemd/`, enables and starts it
 
 ---
 
 ## Application data
 
-Runtime data for all applications lives under `/mnt/podman/<app>/.data/` on the dedicated Podman disk mounted at `/mnt/podman`. Subdirectories are declared in `.data-dirs` and created automatically by `installApps.sh` on every run.
+Runtime data for all applications lives under `/mnt/podman/<app>/.data/` on the dedicated Podman disk mounted at `/mnt/podman`. Subdirectories are declared in `.data-dirs` and created automatically by `installApps.sh` on every run
 
 ---
 
@@ -229,4 +246,4 @@ All volume mounts use the `:Z` suffix to allow containers to access host-mounted
 Volume=/mnt/podman/<app>/.data/foo:/foo:Z
 ```
 
-This tells podman to automatically relabel the directory with the correct SELinux context (`container_file_t`).
+This tells podman to automatically relabel the directory with the correct SELinux context (`container_file_t`)

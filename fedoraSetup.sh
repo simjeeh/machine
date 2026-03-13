@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # ── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -26,16 +28,16 @@ ok "Detected Fedora ${FEDORA_VER}"
 step "Configuring DNF5 for maximum parallel downloads"
 
 modifyDnfConfParameter() {
-    local dnf_conf="/etc/dnf/dnf.conf"
-    local key="$1"
-    local value="$2"
-    if grep -q "^${key}" "${dnf_conf}"; then
-        sed -i "s/^${key}=.*/${key}=${value}/" "${dnf_conf}"
-        ok "Updated ${key}=${value} in ${dnf_conf}"
-    else
-        sed -i "/^\[main\]/a ${key}=${value}" "${dnf_conf}"
-        ok "Added ${key}=${value} to ${dnf_conf}"
-    fi
+  local dnf_conf="/etc/dnf/dnf.conf"
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}" "${dnf_conf}"; then
+      sed -i "s/^${key}=.*/${key}=${value}/" "${dnf_conf}"
+      ok "Updated ${key}=${value} in ${dnf_conf}"
+  else
+      sed -i "/^\[main\]/a ${key}=${value}" "${dnf_conf}"
+      ok "Added ${key}=${value} to ${dnf_conf}"
+  fi
 }
 modifyDnfConfParameter max_parallel_downloads 10
 
@@ -52,8 +54,8 @@ ok "System is up to date"
 step "Enabling RPM Fusion (free + nonfree)"
 dnf check-update || true   # non-zero exit is normal when updates exist
 dnf install -y \
-    "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm" \
-    "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
+  "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm" \
+  "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
 ok "RPM Fusion repositories enabled"
 
 # =============================================================================
@@ -71,8 +73,8 @@ step "Installing multimedia codecs"
 dnf swap -y ffmpeg-free ffmpeg --allowerasing
 dnf group install -y multimedia
 dnf upgrade -y @multimedia \
-    --setopt="install_weak_deps=False" \
-    --exclude=PackageKit-gstreamer-plugin
+  --setopt="install_weak_deps=False" \
+  --exclude=PackageKit-gstreamer-plugin
 dnf swap -y mesa-va-drivers mesa-va-drivers-freeworld
 dnf swap -y mesa-vdpau-drivers mesa-vdpau-drivers-freeworld
 ok "Multimedia codecs installed"
@@ -106,24 +108,33 @@ ok "VSCodium related repository provided"
 # ── DNF packages ──────────────────────────────────────────────────────────────
 step "Installing DNF packages"
 dnf install -y \
-    akmod-nvidia \
-    xorg-x11-drv-nvidia-cuda \
-    podman \
-    codium
+  akmod-nvidia \
+  xorg-x11-drv-nvidia-cuda \
+  podman \
+  codium
 ok "DNF packages installed"
 
 # ── Flatpak apps ─────────────────────────────────────────────────────────────
 step "Installing Flatpak applications from Flathub"
 flatpak install -y \
-    flathub \
-    com.brave.Browser \
-    com.spotify.Client \
-    com.sublimehq.SublimeText \
-    io.ente.photos \
-    org.darktable.Darktable \
-    org.signal.Signal \
-    org.videolan.VLC
+  flathub \
+  com.brave.Browser \
+  com.spotify.Client \
+  com.sublimehq.SublimeText \
+  io.ente.photos \
+  org.darktable.Darktable \
+  org.signal.Signal \
+  org.videolan.VLC
 ok "Flatpak applications installed"
+
+# ── Scripts ──────────────────────────────────────────────────────────────────
+step "Add scripts directory to PATH"
+if [[ -z "${SUDO_USER:-}" ]]; then
+  warn "Could not determine original user — skipping Scripts setup"
+else
+  echo "export PATH=\"${SCRIPT_DIR}/scripts:${PATH}\"" >> /home/${SUDO_USER}/.bashrc
+fi
+ok "Scripts directory added to PATH"
 
 # =============================================================================
 # 8. Tailscale
@@ -145,7 +156,7 @@ ethtool -K "${NETDEV}" rx-udp-gro-forwarding on rx-gro-list off
  
 mkdir -p /etc/networkd-dispatcher/routable.d/
 printf '#!/bin/sh\n\nethtool -K %s rx-udp-gro-forwarding on rx-gro-list off\n' "${NETDEV}" \
-    | tee /etc/networkd-dispatcher/routable.d/50-tailscale
+  | tee /etc/networkd-dispatcher/routable.d/50-tailscale
 chmod 755 /etc/networkd-dispatcher/routable.d/50-tailscale
 
 # Authenticate with Tailscale (opens browser or prints a login URL)
@@ -165,15 +176,14 @@ step "Installing Podman apps"
  
 # SUDO_USER is set automatically when the script is invoked with sudo
 if [[ -z "${SUDO_USER:-}" ]]; then
-    warn "Could not determine original user — skipping Podman apps"
+  warn "Could not determine original user — skipping Podman apps"
 else
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    USER_ID=$(id -u "${SUDO_USER}")
-    sudo -u "${SUDO_USER}" \
-        XDG_RUNTIME_DIR="/run/user/${USER_ID}" \
-        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${USER_ID}/bus" \
-        bash "${SCRIPT_DIR}/podman/installApps.sh"
-    ok "Podman apps installed"
+  USER_ID=$(id -u "${SUDO_USER}")
+  sudo -u "${SUDO_USER}" \
+    XDG_RUNTIME_DIR="/run/user/${USER_ID}" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${USER_ID}/bus" \
+    bash "${SCRIPT_DIR}/podman/installApps.sh"
+  ok "Podman apps installed"
 fi
 
 # =============================================================================
@@ -182,44 +192,44 @@ fi
 step "Removing bloatware"
 
 BLOAT=(
-    dragon
-    elisa-player
-    kaddressbook
-    kaddressbook-libs
-    kamoso
-    kcalc
-    kcalutils
-    kdeconnectd
-    kmahjongg
-    kmailtransport
-    kmines
-    kmouth
-    kpat
-    krdc
-    krdc-libs
-    krdp
-    krdp-libs
-    krfb
-    krfb-libs
-    kwalletmanager5
-    kwrite
-    neochat
-    xwaylandvideobridge
-    gnome-abrt
-    filelight
+  dragon
+  elisa-player
+  kaddressbook
+  kaddressbook-libs
+  kamoso
+  kcalc
+  kcalutils
+  kdeconnectd
+  kmahjongg
+  kmailtransport
+  kmines
+  kmouth
+  kpat
+  krdc
+  krdc-libs
+  krdp
+  krdp-libs
+  krfb
+  krfb-libs
+  kwalletmanager5
+  kwrite
+  neochat
+  xwaylandvideobridge
+  gnome-abrt
+  filelight
 )
 
 # Only attempt removal for packages that are actually installed
 TO_REMOVE=()
 for pkg in "${BLOAT[@]}"; do
-    rpm -q "$pkg" &>/dev/null && TO_REMOVE+=("$pkg")
+  rpm -q "$pkg" &>/dev/null && TO_REMOVE+=("$pkg")
 done
 
 if [[ ${#TO_REMOVE[@]} -gt 0 ]]; then
-    dnf remove -y "${TO_REMOVE[@]}"
-    ok "Removed ${#TO_REMOVE[@]} bloat package(s)"
+  dnf remove -y "${TO_REMOVE[@]}"
+  ok "Removed ${#TO_REMOVE[@]} bloat package(s)"
 else
-    ok "No bloat packages found — nothing to remove"
+  ok "No bloat packages found — nothing to remove"
 fi
 
 dnf autoremove -y
