@@ -16,6 +16,29 @@ ok()    { echo -e "${GREEN}✔ $*${RESET}"; }
 warn()  { echo -e "${YELLOW}⚠ $*${RESET}"; }
 die()   { echo -e "${RED}✘ $*${RESET}" >&2; exit 1; }
 
+# Returns 0 if SUDO_USER is set; otherwise emits a warning and returns 1.
+# Usage: check_sudo_user "context description" || return/continue/etc.
+check_sudo_user() {
+  local context="${1:-this step}"
+  if [[ -z "${SUDO_USER:-}" ]]; then
+    warn "Could not determine original user — skipping ${context}"
+    return 1
+  fi
+}
+
+# Runs `aws configure` for a given profile only if that profile is absent
+aws_configure_profile_if_missing() {
+  local profile="$1"
+  local aws_config="/home/${SUDO_USER}/.aws/credentials"
+  if grep -qE "^\[${profile}\]" "${aws_config}"; then
+    ok "AWS profile '${profile}' already configured — skipping"
+  else
+    ok "Adding AWS profile '${profile}'"
+    sudo -u "${SUDO_USER}" aws configure --profile "${profile}"
+    ok "AWS profile '${profile}' configured"
+  fi
+}
+
 # ── Preflight ─────────────────────────────────────────────────────────────────
 [[ ${EUID} -ne 0 ]] && die "Run this script with sudo:  sudo bash ${0}"
 
@@ -32,11 +55,11 @@ modifyDnfConfParameter() {
   local key="$1"
   local value="$2"
   if grep -q "^${key}" "${dnf_conf}"; then
-      sed -i "s/^${key}=.*/${key}=${value}/" "${dnf_conf}"
-      ok "Updated ${key}=${value} in ${dnf_conf}"
+    sed -i "s/^${key}=.*/${key}=${value}/" "${dnf_conf}"
+    ok "Updated ${key}=${value} in ${dnf_conf}"
   else
-      sed -i "/^\[main\]/a ${key}=${value}" "${dnf_conf}"
-      ok "Added ${key}=${value} to ${dnf_conf}"
+    sed -i "/^\[main\]/a ${key}=${value}" "${dnf_conf}"
+    ok "Added ${key}=${value} to ${dnf_conf}"
   fi
 }
 modifyDnfConfParameter max_parallel_downloads 10
@@ -130,12 +153,22 @@ ok "Flatpak applications installed"
 
 # ── Scripts ──────────────────────────────────────────────────────────────────
 step "Add scripts directory to PATH"
-if [[ -z "${SUDO_USER:-}" ]]; then
-  warn "Could not determine original user — skipping Scripts setup"
-else
+if check_sudo_user "Scripts setup"; then
   echo "export PATH=\"${SCRIPT_DIR}/scripts:${PATH}\"" >> /home/${SUDO_USER}/.bashrc
+  ok "Scripts directory added to PATH"
 fi
-ok "Scripts directory added to PATH"
+
+# ── AWS CLI Login ────────────────────────────────────────────────────────────
+step "Logging into AWS SSO profiles"
+AWS_PROFILES=(
+  default
+  simjeez
+)
+if check_sudo_user "AWS CLI login"; then
+  for profile in "${AWS_PROFILES[@]}"; do
+    aws_configure_profile_if_missing "${profile}"
+  done
+fi
 
 # =============================================================================
 # 8. Tailscale
@@ -143,7 +176,11 @@ ok "Scripts directory added to PATH"
 step "Installing and configuring Tailscale"
 
 # Install Tailscale
-curl -fsSL https://tailscale.com/install.sh | sh
+if command -v tailscale &>/dev/null; then
+  ok "Tailscale already installed — skipping install"
+else
+  curl -fsSL https://tailscale.com/install.sh | sh
+fi
 sudo systemctl enable --now tailscaled
 
 # Enable IP forwarding
@@ -161,7 +198,11 @@ printf '#!/bin/sh\n\nethtool -K %s rx-udp-gro-forwarding on rx-gro-list off\n' "
 chmod 755 /etc/networkd-dispatcher/routable.d/50-tailscale
 
 # Authenticate with Tailscale (opens browser or prints a login URL)
-tailscale login
+if tailscale status &>/dev/null; then
+  ok "Tailscale already logged in — skipping login"
+else
+  tailscale login
+fi
 
 # Bring Tailscale up and advertise this machine's IP
 LOCAL_IP=$(hostname -I | awk '{print $1}')
@@ -174,11 +215,8 @@ warn "Remember to approve the subnet route at login.tailscale.com/admin/machines
 # 10. Podman Apps (run as original user)
 # =============================================================================
 step "Installing Podman apps"
- 
-# SUDO_USER is set automatically when the script is invoked with sudo
-if [[ -z "${SUDO_USER:-}" ]]; then
-  warn "Could not determine original user — skipping Podman apps"
-else
+
+if check_sudo_user "Podman apps"; then
   USER_ID=$(id -u "${SUDO_USER}")
   sudo -u "${SUDO_USER}" \
     XDG_RUNTIME_DIR="/run/user/${USER_ID}" \
