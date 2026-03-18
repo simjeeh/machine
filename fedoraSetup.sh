@@ -111,7 +111,8 @@ dnf install -y \
   akmod-nvidia \
   xorg-x11-drv-nvidia-cuda \
   podman \
-  codium
+  codium \
+  awscli2
 ok "DNF packages installed"
 
 # ── Flatpak apps ─────────────────────────────────────────────────────────────
