@@ -8,16 +8,14 @@ fi
 
 # Function to show usage
 show_usage() {
-  echo "Usage: $0 [-m|-s|-a|-h]"
+  echo "Usage: $0 [-m|-s|-h]"
   echo "  -m    Process Movies directory"
   echo "  -s    Process Shows directory"
-  echo "  -a    Process Audiobooks directory"
   echo "  -h    Show this help"
   echo ""
   echo "Example:"
   echo "  $0 -m"
   echo "  $0 -s"
-  echo "  $0 -a"
   exit 1
 }
 
@@ -27,7 +25,6 @@ DEST_DIR="/mnt/nas/jellyfin"
 
 M_SET=false
 S_SET=false
-A_SET=false
 
 # Parse command line arguments
 while getopts "msah" opt; do
@@ -42,11 +39,6 @@ while getopts "msah" opt; do
       DEST_DIR="${DEST_DIR}/Shows"
       S_SET=true
       ;;
-    a)
-      SOURCE_DIR="${SOURCE_DIR}/ABs"
-      DEST_DIR="${DEST_DIR}/Books/Audiobooks"
-      A_SET=true
-      ;;
     h)
       show_usage
       ;;
@@ -57,8 +49,8 @@ while getopts "msah" opt; do
   esac
 done
 
-if { ! ${M_SET} && ! ${S_SET} && ! ${A_SET}; } || { ${M_SET} && ${S_SET} && ${A_SET}; }; then
-  echo "Error: You must provide either -m, -s, or -a" >&2
+if { ! ${M_SET} && ! ${S_SET}; } || { ${M_SET} && ${S_SET}; }; then
+  echo "Error: You must provide either -m or -s" >&2
   exit 1
 fi
 
@@ -123,7 +115,7 @@ if { ${M_SET} || ${S_SET}; }; then
     if find "${media_dir}" -mindepth 1 | read; then
       remote_subdir="$(basename "${media_dir}")"
       mkdir_cmd="ssh nas \"mkdir -p \\\"${DEST_DIR}/${remote_subdir}\\\"\""
-      rsync_cmd="rsync -avz --progress --chown=${SUDO_USER}:${SUDO_USER} \"${media_dir}/\" \"${SUDO_USER}@nas:${DEST_DIR}/${remote_subdir}/\""
+      rsync_cmd="rsync -avz --progress --chown=${SUDO_USER}:${SUDO_USER} \"${media_dir}/\" \"nas:${DEST_DIR}/${remote_subdir}/\""
       su - ${SUDO_USER} -c "${mkdir_cmd}"
       su - ${SUDO_USER} -c "${rsync_cmd}"
 
@@ -137,22 +129,6 @@ if { ${M_SET} || ${S_SET}; }; then
     else
       FAILED_UPLOADS+=("${media_dir}")
       rm -rf "${media_dir}"
-    fi
-  done
-elif { ${A_SET}; }; then
-  echo "Step 2: Uploading to server..."
-  for media_dir in "${SOURCE_DIR}"/*; do
-    remote_subdir="$(basename "${media_dir}")"
-    mkdir_cmd="ssh nas \"mkdir -p \\\"${DEST_DIR}/${remote_subdir}\\\"\""
-    rsync_cmd="rsync -avz --progress --chown=${SUDO_USER}:${SUDO_USER} \"${media_dir}/\" \"${SUDO_USER}@nas:${DEST_DIR}/${remote_subdir}/\""
-    su - ${SUDO_USER} -c "${mkdir_cmd}"
-    su - ${SUDO_USER} -c "${rsync_cmd}"
-    if [[ $? -eq 0 ]]; then
-      echo ""
-      echo "Upload completed successfully!"
-      rm -rf "${media_dir}"
-    else
-      FAILED_UPLOADS+=("${media_dir}")
     fi
   done
 fi
