@@ -173,7 +173,14 @@ if check_sudo_user "AWS CLI login"; then
 fi
 
 # =============================================================================
-# 8. Tailscale
+# 8. Set Permanent Hostname
+# =============================================================================
+step "Setting permanent hostname to orca"
+hostnamectl set-hostname orca
+ok "Hostname set to orca permanently"
+
+# =============================================================================
+# 9. Tailscale
 # =============================================================================
 step "Installing and configuring Tailscale"
 
@@ -228,7 +235,7 @@ if check_sudo_user "Podman apps"; then
 fi
 
 # =============================================================================
-# 8. Cleanup — remove unwanted KDE/bloat packages
+# 11. Cleanup — remove unwanted KDE/bloat packages
 # =============================================================================
 step "Removing bloatware"
 
