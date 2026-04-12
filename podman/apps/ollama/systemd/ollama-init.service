@@ -2,13 +2,32 @@
 Description=Pull Ollama models
 After=ollama.service
 Requires=ollama.service
-
 [Service]
 Type=oneshot
 ExecStart=/bin/bash -c '\
   MODELS_FILE="/mnt/podman/ollama/config/models.txt"; \
   echo "Waiting for ollama to be ready..."; \
   until podman exec ollama-ollama ollama list &>/dev/null; do sleep 2; done; \
+  \
+  # Get current models list \
+  CURRENT_MODELS=$(podman exec ollama-ollama ollama list | awk "{print \$1}" | grep -v "^NAME$"); \
+  \
+  # Read models from file into array \
+  declare -a TARGET_MODELS=(); \
+  while IFS= read -r model || [[ -n "$$model" ]]; do \
+    [[ -z "$$model" || "$$model" =~ ^\# ]] && continue; \
+    TARGET_MODELS+=("$$model"); \
+  done < "$$MODELS_FILE"; \
+  \
+  # Remove models not in target list \
+  for model in $$CURRENT_MODELS; do \
+    if [[ ! " $${TARGET_MODELS[*]} " =~ " $$model " ]]; then \
+      echo "❌ Removing outdated model: $$model"; \
+      podman exec ollama-ollama ollama rm "$$model"; \
+    fi; \
+  done; \
+  \
+  # Pull models from file \
   while IFS= read -r model || [[ -n "$$model" ]]; do \
     [[ -z "$$model" || "$$model" =~ ^\# ]] && continue; \
     if podman exec ollama-ollama ollama list | grep -q "$$model"; then \
@@ -18,6 +37,5 @@ ExecStart=/bin/bash -c '\
       podman exec ollama-ollama ollama pull "$$model"; \
     fi; \
   done < "$$MODELS_FILE"'
-
 [Install]
 WantedBy=default.target
