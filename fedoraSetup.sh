@@ -135,7 +135,8 @@ dnf install -y \
   xorg-x11-drv-nvidia-cuda \
   podman \
   codium \
-  awscli2
+  awscli2 \
+  expect
 ok "DNF packages installed"
 
 # ── Flatpak apps ─────────────────────────────────────────────────────────────
@@ -148,7 +149,8 @@ flatpak install -y \
   io.ente.photos \
   org.darktable.Darktable \
   org.signal.Signal \
-  org.videolan.VLC
+  org.videolan.VLC \
+  org.localsend.localsend_app
 ok "Flatpak applications installed"
 
 # ── Scripts ──────────────────────────────────────────────────────────────────

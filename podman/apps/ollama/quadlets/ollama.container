@@ -7,7 +7,7 @@ StartLimitBurst=10
 
 [Container]
 # https://hub.docker.com/r/ollama/ollama/tags
-Image=docker.io/ollama/ollama:0.17.7
+Image=docker.io/ollama/ollama:0.20.5
 ContainerName=ollama-ollama
 Pod=ollama.pod
 AddDevice=nvidia.com/gpu=all

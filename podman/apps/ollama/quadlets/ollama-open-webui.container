@@ -7,7 +7,7 @@ StartLimitBurst=10
 
 [Container]
 # https://github.com/open-webui/open-webui/tags
-Image=ghcr.io/open-webui/open-webui:0.8.10
+Image=ghcr.io/open-webui/open-webui:0.8.12
 ContainerName=ollama-open-webui
 Pod=ollama.pod
 Environment=OLLAMA_BASE_URL=http://0.0.0.0:11434
