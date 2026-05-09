@@ -1,2 +1,2 @@
-gemma4:26b
-qwen3-coder:30b
+gemma4:e4b
+qwen3.5:9b

@@ -36,7 +36,8 @@ fi
 
 if [[ "${CHECK_MODE}" == "true" ]]; then
   if podman secret inspect ollama-webui-email &>/dev/null && \
-     podman secret inspect ollama-webui-password &>/dev/null; then
+     podman secret inspect ollama-webui-password &>/dev/null && \
+     podman secret inspect ollama-webui-brave-search-api-key &>/dev/null; then
     echo "  ✅ Secrets already exist, skipping"
     exit 0
   fi
@@ -45,5 +46,6 @@ fi
 
 create_or_overwrite_secret "ollama-webui-email" "Enter Open WebUI admin email (Ollama in BitWarden)"
 create_or_overwrite_secret "ollama-webui-password" "Enter Open WebUI admin password (Ollama in BitWarden)"
+create_or_overwrite_secret "ollama-webui-brave-search-api-key" "Enter Brave Search API key (Brave API in BitWarden)"
 
 echo "✅ All secrets processed."

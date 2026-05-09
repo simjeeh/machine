@@ -7,13 +7,18 @@ StartLimitBurst=10
 
 [Container]
 # https://github.com/open-webui/open-webui/tags
-Image=ghcr.io/open-webui/open-webui:0.8.12
+Image=ghcr.io/open-webui/open-webui:0.9.2
 ContainerName=ollama-open-webui
 Pod=ollama.pod
+Environment=ENABLE_PERSISTENT_CONFIG=false
 Environment=OLLAMA_BASE_URL=http://0.0.0.0:11434
 Environment=WEBUI_AUTH=true
+Environment=ENABLE_WEB_SEARCH=true
+Environment=WEB_SEARCH_ENGINE=brave
+Environment=WEB_SEARCH_CONCURRENT_REQUESTS=1
 Secret=ollama-webui-email,type=env,target=WEBUI_ADMIN_EMAIL
 Secret=ollama-webui-password,type=env,target=WEBUI_ADMIN_PASSWORD
+Secret=ollama-webui-brave-search-api-key,type=env,target=BRAVE_SEARCH_API_KEY
 Volume=/mnt/podman/ollama/.data/open-webui:/app/backend/data:Z
 
 [Service]

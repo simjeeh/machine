@@ -115,7 +115,7 @@ if { ${M_SET} || ${S_SET}; }; then
     if find "${media_dir}" -mindepth 1 | read; then
       remote_subdir="$(basename "${media_dir}")"
       mkdir_cmd="ssh nas \"mkdir -p \\\"${DEST_DIR}/${remote_subdir}\\\"\""
-      rsync_cmd="rsync -avz --progress --chown=${SUDO_USER}:${SUDO_USER} \"${media_dir}/\" \"nas:${DEST_DIR}/${remote_subdir}/\""
+      rsync_cmd="rsync -avz --progress \"${media_dir}/\" \"nas:${DEST_DIR}/${remote_subdir}/\""
       su - ${SUDO_USER} -c "${mkdir_cmd}"
       su - ${SUDO_USER} -c "${rsync_cmd}"
 
