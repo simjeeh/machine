@@ -15,10 +15,6 @@ usage() {
   exit 1
 }
 
-# Run it as yourself; it restarts itself through sudo (by full path, since sudo ignores your PATH).
-[[ ${EUID} -eq 0 ]] || exec sudo "$(readlink -f "$0")" "$@"
-[[ -n ${SUDO_USER:-} ]] || { echo "Run this as your own user, not as root." >&2; exit 1; }
-
 kind=""
 while getopts "msh" opt; do
   case ${opt} in
@@ -28,6 +24,11 @@ while getopts "msh" opt; do
   esac
 done
 [[ -n ${kind} ]] || usage
+
+# Run it as yourself; it restarts itself through sudo (by full path, since sudo ignores your PATH).
+[[ ${EUID} -eq 0 ]] || exec sudo "$(readlink -f "$0")" "$@"
+[[ -n ${SUDO_USER:-} ]] || { echo "Run this as your own user, not as root." >&2; exit 1; }
+
 [[ -d ${src} ]] || { echo "Error: ${src} does not exist" >&2; exit 1; }
 dest="${INGEST}/${kind}"
 
@@ -35,7 +36,8 @@ dest="${INGEST}/${kind}"
 as_user() { sudo -u "${SUDO_USER}" -H "$@"; }
 
 echo "Processing ${src}"
-chown -R "${SUDO_USER}:" "${src}"
+# Only the items inside: the Movies/Shows folder itself must stay the downloader container's.
+find "${src}" -mindepth 1 -maxdepth 1 -type d -exec chown -R "${SUDO_USER}:" {} +
 
 uploaded=0
 failed=()
