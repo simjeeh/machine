@@ -1,0 +1,15 @@
+[Unit]
+Description=DeepSeek Harness
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/npx @deepseek-ai/dsh web
+Restart=on-failure
+RestartSec=5
+
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=default.target

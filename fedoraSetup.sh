@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -xeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -98,8 +98,9 @@ dnf group install -y multimedia
 dnf upgrade -y @multimedia \
   --setopt="install_weak_deps=False" \
   --exclude=PackageKit-gstreamer-plugin
-dnf swap -y mesa-va-drivers mesa-va-drivers-freeworld
-dnf swap -y mesa-vdpau-drivers mesa-vdpau-drivers-freeworld
+
+dnf distro-sync -y --refresh --allowerasing
+dnf install -y mesa-va-drivers-freeworld
 ok "Multimedia codecs installed"
 
 # =============================================================================
@@ -134,6 +135,7 @@ dnf install -y \
   akmod-nvidia \
   xorg-x11-drv-nvidia-cuda \
   podman \
+  nodejs \
   codium \
   awscli2 \
   expect
@@ -170,6 +172,18 @@ if check_sudo_user "AWS CLI login"; then
   for profile in "${AWS_PROFILES[@]}"; do
     aws_configure_profile_if_missing "${profile}"
   done
+fi
+
+# ── DeepSeek Harness ─────────────────────────────────────────────────────────
+step "Installing DeepSeek Harness"
+if check_sudo_user "DeepSeek Harness"; then
+  SYSTEMD_USER_DIR="/home/${SUDO_USER}/.config/systemd/user"
+  mkdir -p "${SYSTEMD_USER_DIR}"
+  cp ${SCRIPT_DIR}/systemd/deepseek.service ${SYSTEMD_USER_DIR}/deepseek.service
+  chown "${SUDO_USER}:${SUDO_USER}" "${SYSTEMD_USER_DIR}/deepseek.service"
+  sudo -u "${SUDO_USER}" systemctl --user daemon-reload
+  sudo -u "${SUDO_USER}" systemctl --user enable --now deepseek.service
+  ok "DeepSeek Harness systemd service enabled and started"
 fi
 
 # =============================================================================
