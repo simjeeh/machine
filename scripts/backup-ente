@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LOCAL_BACKEUP="/home/${USER}/.ente/Ente Photos/"
+LOCAL_BACKEUP="/mnt/ente/Ente Photos/"
 DRIVE_BACKUP="/mnt/externalEnte/Ente Photos/"
 
 rsync -az --dry-run --delete --itemize-changes "${LOCAL_BACKEUP}" "${DRIVE_BACKUP}" | awk '
