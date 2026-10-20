@@ -1,6 +1,6 @@
 #!/bin/bash
 # Uploads finished downloads to snow-leopard's ingest folder, then runs nas-media-import there.
-# Run with sudo: the downloads are owned by the downloader container, so they need a chown first.
+# It needs root to chown the downloads, which belong to the downloader container, and uses sudo for that.
 set -uo pipefail
 
 REMOTE="hozzfozz@snow-leopard"
@@ -9,13 +9,15 @@ INGEST="/srv/media/ingest"
 VIDEO_RE='.*\.\(mp4\|avi\|mkv\)$'
 
 usage() {
-  echo "Usage: sudo $0 -m | -s"
+  echo "Usage: $(basename "$0") -m | -s"
   echo "  -m    upload Movies (to ${INGEST}/movies)"
   echo "  -s    upload Shows (to ${INGEST}/shows)"
   exit 1
 }
 
-[[ ${EUID} -eq 0 && -n ${SUDO_USER:-} ]] || { echo "Run this with sudo, as your own user." >&2; exit 1; }
+# Run it as yourself; it restarts itself through sudo (by full path, since sudo ignores your PATH).
+[[ ${EUID} -eq 0 ]] || exec sudo "$(readlink -f "$0")" "$@"
+[[ -n ${SUDO_USER:-} ]] || { echo "Run this as your own user, not as root." >&2; exit 1; }
 
 kind=""
 while getopts "msh" opt; do
