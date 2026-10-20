@@ -1,144 +1,91 @@
 #!/bin/bash
+# Uploads finished downloads to snow-leopard's ingest folder, then runs nas-media-import there.
+# It needs root to chown the downloads, which belong to the downloader container, and uses sudo for that.
+set -uo pipefail
 
-# Check if script is run as root
-if [[ ${EUID} -ne 0 ]]; then
-  echo "This script must be run as root"
-  exit 1
-fi
+REMOTE="hozzfozz@snow-leopard"
+SOURCE_ROOT="/mnt/podman/vpn-downloader/.data/downloads/complete"
+INGEST="/srv/media/ingest"
+VIDEO_RE='.*\.\(mp4\|avi\|mkv\)$'
 
-# Function to show usage
-show_usage() {
-  echo "Usage: $0 [-m|-s|-h]"
-  echo "  -m    Process Movies directory"
-  echo "  -s    Process Shows directory"
-  echo "  -h    Show this help"
-  echo ""
-  echo "Example:"
-  echo "  $0 -m"
-  echo "  $0 -s"
+usage() {
+  echo "Usage: $(basename "$0") -m | -s"
+  echo "  -m    upload Movies (to ${INGEST}/movies)"
+  echo "  -s    upload Shows (to ${INGEST}/shows)"
   exit 1
 }
 
-# Initialize variables
-SOURCE_DIR="/mnt/podman/vpn-downloader/.data/downloads/complete"
-DEST_DIR="/mnt/nas/jellyfin"
+# Run it as yourself; it restarts itself through sudo (by full path, since sudo ignores your PATH).
+[[ ${EUID} -eq 0 ]] || exec sudo "$(readlink -f "$0")" "$@"
+[[ -n ${SUDO_USER:-} ]] || { echo "Run this as your own user, not as root." >&2; exit 1; }
 
-M_SET=false
-S_SET=false
-
-# Parse command line arguments
-while getopts "msah" opt; do
-  case $opt in
-    m)
-      SOURCE_DIR="${SOURCE_DIR}/Movies"
-      DEST_DIR="${DEST_DIR}/Movies"
-      M_SET=true
-      ;;
-    s)
-      SOURCE_DIR="${SOURCE_DIR}/Shows"
-      DEST_DIR="${DEST_DIR}/Shows"
-      S_SET=true
-      ;;
-    h)
-      show_usage
-      ;;
-    \?)
-      echo "Invalid option: -$OPTARG" >&2
-      show_usage
-      ;;
+kind=""
+while getopts "msh" opt; do
+  case ${opt} in
+    m) [[ -z ${kind} ]] || usage; kind=movies; src="${SOURCE_ROOT}/Movies" ;;
+    s) [[ -z ${kind} ]] || usage; kind=shows; src="${SOURCE_ROOT}/Shows" ;;
+    *) usage ;;
   esac
 done
+[[ -n ${kind} ]] || usage
+[[ -d ${src} ]] || { echo "Error: ${src} does not exist" >&2; exit 1; }
+dest="${INGEST}/${kind}"
 
-if { ! ${M_SET} && ! ${S_SET}; } || { ${M_SET} && ${S_SET}; }; then
-  echo "Error: You must provide either -m or -s" >&2
-  exit 1
-fi
+# Commands that talk to the server run as you, so ssh uses your Tailscale login and known_hosts.
+as_user() { sudo -u "${SUDO_USER}" -H "$@"; }
 
-# Check if directory exists
-if [[ ! -d "${SOURCE_DIR}" ]]; then
-  echo "Error: Directory ${SOURCE_DIR} does not exist"
-  exit 1
-fi
+echo "Processing ${src}"
+chown -R "${SUDO_USER}:" "${src}"
 
-echo "Processing directory: ${SOURCE_DIR}"
-echo ""
+uploaded=0
+failed=()
+skipped=()
 
-# Step 1: Change ownership of all directories to local user
-echo "Step 1: Changing ownership of directories to ${SUDO_USER}..."
-find "${SOURCE_DIR}" -mindepth 1 -type d -exec chown -R "${SUDO_USER}":"${SUDO_USER}" {} \;
-echo "Ownership changed successfully"
-echo ""
+for item in "${src}"/*/; do
+  [[ -d ${item} ]] || continue
+  item=${item%/}
+  name=$(basename "${item}")
+  echo
+  echo "== ${name}"
 
-if { ${M_SET} || ${S_SET}; }; then
-  # Step 2: Flatten video files
-  echo "Step 2: Flattening video files..."
-
-  # Define video file extensions
-  VIDEO_EXTENSIONS='mp4\|avi\|mkv'
-  FAILED_UPLOADS=()
-
-  # Process each top-level directory
-  for media_dir in "${SOURCE_DIR}"/*; do
-    if [[ -d "${media_dir}" ]]; then
-      echo "Processing: ${media_dir}"
-      
-      # Find all video files in subdirectories (not in the top directory itself)
-      find "${media_dir}" -type f -iregex ".*\.\(${VIDEO_EXTENSIONS}\)$" | while read -r video_file; do
-        echo "vid file: $video_file"
-        # Get the filename
-        filename=$(basename "${video_file}")
-        
-        # Create destination path in the top directory
-        dest_path="${media_dir}/${filename}"
-        
-        # Handle filename conflicts by adding a counter
-        counter=1
-        while [[ -e "${dest_path}" ]]; do
-            # Get filename without extension
-            name_no_ext="${filename%.*}"
-            extension="${filename##*.}"
-            dest_path="${media_dir}/${name_no_ext}_${counter}.${extension}"
-            ((counter++))
-        done
-        mv "${video_file}" "${dest_path}"
-      done
-
-      # Remove unneeded files/dirs
-      find "${media_dir}" -type f ! -iregex ".*\.\(${VIDEO_EXTENSIONS}\)$" -exec rm -f {} +
-      find "${media_dir}" -mindepth 1 -type d -empty -delete
+  # Move every video up to the item's top folder, renaming on a clash, then delete everything else.
+  while IFS= read -r -d '' video; do
+    target="${item}/$(basename "${video}")"
+    if [[ ${video} != "${target}" ]]; then
+      base=${target%.*}; ext=${target##*.}; n=1
+      while [[ -e ${target} ]]; do target="${base}_${n}.${ext}"; ((n++)); done
+      mv "${video}" "${target}"
     fi
+  done < <(find "${item}" -mindepth 2 -type f -iregex "${VIDEO_RE}" -print0)
+  find "${item}" -type f ! -iregex "${VIDEO_RE}" -delete
+  find "${item}" -mindepth 1 -type d -empty -delete
 
-    echo "Video files flattened successfully"
-    echo ""
-    echo "Step 3: Uploading to server..."
+  if [[ -z $(find "${item}" -maxdepth 1 -type f -print -quit) ]]; then
+    echo "No video files, left in place"
+    skipped+=("${item}")
+    continue
+  fi
 
-    if find "${media_dir}" -mindepth 1 | read; then
-      remote_subdir="$(basename "${media_dir}")"
-      mkdir_cmd="ssh nas \"mkdir -p \\\"${DEST_DIR}/${remote_subdir}\\\"\""
-      rsync_cmd="rsync -avz --progress \"${media_dir}/\" \"nas:${DEST_DIR}/${remote_subdir}/\""
-      su - ${SUDO_USER} -c "${mkdir_cmd}"
-      su - ${SUDO_USER} -c "${rsync_cmd}"
+  # No trailing slash on the source, so rsync creates the item's folder on the server.
+  if as_user rsync -a --partial --info=progress2 "${item}" "${REMOTE}:${dest}/"; then
+    rm -rf "${item}"
+    ((uploaded++))
+  else
+    failed+=("${item}")
+  fi
+done
 
-      if [[ $? -eq 0 ]]; then
-        echo ""
-        echo "Upload completed successfully!"
-        rm -rf "${media_dir}"
-      else
-        FAILED_UPLOADS+=("${media_dir}")
-      fi
-    else
-      FAILED_UPLOADS+=("${media_dir}")
-      rm -rf "${media_dir}"
-    fi
-  done
+echo
+echo "Uploaded: ${uploaded}"
+for f in "${skipped[@]}"; do echo "Skipped (no video): ${f}"; done
+for f in "${failed[@]}"; do echo "FAILED: ${f}"; done
+
+if ((uploaded > 0)); then
+  # nas-media-import skips anything changed in the last 60 seconds, so wait that long first.
+  echo
+  echo "Waiting 60 seconds, then importing on the server (sudo asks for your password there)..."
+  sleep 60
+  as_user ssh -t "${REMOTE}" "sudo nas-media-import" || echo "Import left something in ${dest}; check the Status screen." >&2
 fi
 
-echo ""
-if [[ ${#FAILED_UPLOADS[@]} -gt 0 ]]; then
-  echo "The following directories failed to upload:"
-  for dir in "${FAILED_UPLOADS[@]}"; do
-    echo "  $dir"
-  done
-else
-  echo "All directories synced successfully!"
-fi
+((${#failed[@]} == 0))

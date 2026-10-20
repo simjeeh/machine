@@ -1,4 +1,6 @@
 #!/bin/bash
+# Sets up orca (Fedora KDE). Safe to re-run: each step checks what's already done.
+# Run as yourself with sudo, since several steps need to know your user: sudo bash fedora-setup.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,107 +18,53 @@ ok()    { echo -e "${GREEN}✔ $*${RESET}"; }
 warn()  { echo -e "${YELLOW}⚠ $*${RESET}"; }
 die()   { echo -e "${RED}✘ $*${RESET}" >&2; exit 1; }
 
-# Returns 0 if SUDO_USER is set; otherwise emits a warning and returns 1.
-# Usage: check_sudo_user "context description" || return/continue/etc.
-check_sudo_user() {
-  local context="${1:-this step}"
-  if [[ -z "${SUDO_USER:-}" ]]; then
-    warn "Could not determine original user — skipping ${context}"
-    return 1
-  fi
-}
+# Runs a command as you rather than root, with your home directory.
+as_user() { sudo -u "${SUDO_USER}" -H "$@"; }
 
-# Runs `aws configure` for a given profile only if that profile is absent
-aws_configure_profile_if_missing() {
-  local profile="$1"
-  local aws_config="/home/${SUDO_USER}/.aws/credentials"
-  if grep -qE "^\[${profile}\]" "${aws_config}"; then
-    ok "AWS profile '${profile}' already configured — skipping"
+# Swaps package $1 for $2, but only while $1 is still installed, so re-runs don't fail.
+swap_if_installed() {
+  if rpm -q "$1" &>/dev/null; then
+    dnf swap -y "$1" "$2" --allowerasing
   else
-    ok "Adding AWS profile '${profile}'"
-    sudo -u "${SUDO_USER}" aws configure --profile "${profile}"
-    ok "AWS profile '${profile}' configured"
+    ok "$2 already in place"
   fi
 }
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
-[[ ${EUID} -ne 0 ]] && die "Run this script with sudo:  sudo bash ${0}"
+(( EUID == 0 )) || die "Run this script with sudo:  sudo bash ${0}"
+[[ -n ${SUDO_USER:-} && ${SUDO_USER} != root ]] || die "Run it with sudo from your own account, not as root"
+USER_HOME="/home/${SUDO_USER}"
 
 FEDORA_VER=$(rpm -E %fedora)
-ok "Detected Fedora ${FEDORA_VER}"
+ok "Detected Fedora ${FEDORA_VER}, setting up for ${SUDO_USER}"
 
 # =============================================================================
-# 1. Maximise DNF5 Speed
+# 1. DNF speed
 # =============================================================================
-step "Configuring DNF5 for maximum parallel downloads"
-
-modifyDnfConfParameter() {
-  local dnf_conf="/etc/dnf/dnf.conf"
-  local key="$1"
-  local value="$2"
-  if grep -q "^${key}" "${dnf_conf}"; then
-    sed -i "s/^${key}=.*/${key}=${value}/" "${dnf_conf}"
-    ok "Updated ${key}=${value} in ${dnf_conf}"
-  else
-    sed -i "/^\[main\]/a ${key}=${value}" "${dnf_conf}"
-    ok "Added ${key}=${value} to ${dnf_conf}"
-  fi
-}
-modifyDnfConfParameter max_parallel_downloads 10
+step "Configuring DNF for parallel downloads"
+if grep -q '^max_parallel_downloads=' /etc/dnf/dnf.conf; then
+  sed -i 's/^max_parallel_downloads=.*/max_parallel_downloads=10/' /etc/dnf/dnf.conf
+else
+  sed -i '/^\[main\]/a max_parallel_downloads=10' /etc/dnf/dnf.conf
+fi
+ok "max_parallel_downloads=10"
 
 # =============================================================================
-# 2. System Update
-# =============================================================================
-step "Performing full system upgrade"
-dnf upgrade --refresh -y
-ok "System is up to date"
-
-# =============================================================================
-# 3. RPM Fusion Repositories
+# 2. Repositories (before the upgrade, so it covers their packages too)
 # =============================================================================
 step "Enabling RPM Fusion (free + nonfree)"
-dnf check-update || true   # non-zero exit is normal when updates exist
-dnf install -y \
-  "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm" \
-  "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
-ok "RPM Fusion repositories enabled"
+if rpm -q rpmfusion-free-release rpmfusion-nonfree-release &>/dev/null; then
+  ok "RPM Fusion already enabled"
+else
+  dnf install -y \
+    "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm" \
+    "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
+  ok "RPM Fusion enabled"
+fi
 
-# =============================================================================
-# 4. Flatpak & Flathub
-# =============================================================================
-step "Enabling Flatpak and adding Flathub remote"
-flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-ok "Flathub remote ready"
-
-# =============================================================================
-# 5. Essential Multimedia Codecs
-# =============================================================================
-step "Installing multimedia codecs"
-
-dnf swap -y ffmpeg-free ffmpeg --allowerasing
-dnf group install -y multimedia
-dnf upgrade -y @multimedia \
-  --setopt="install_weak_deps=False" \
-  --exclude=PackageKit-gstreamer-plugin
-dnf swap -y mesa-va-drivers mesa-va-drivers-freeworld
-dnf swap -y mesa-vdpau-drivers mesa-vdpau-drivers-freeworld
-ok "Multimedia codecs installed"
-
-# =============================================================================
-# 6. Firmware Updates
-# =============================================================================
-step "Checking and applying firmware updates"
-fwupdmgr get-updates -y || warn "No firmware updates found (or fwupd unavailable)"
-fwupdmgr update -y || warn "Firmware update step skipped"
-ok "Firmware check complete"
-
-# =============================================================================
-# 7. Software Installation
-# =============================================================================
-
-# ── Provide VSCodium related repository ───────────────────────────────────────
-step "Provide VSCodium related repository"
-tee -a /etc/yum.repos.d/vscodium.repo << 'EOF'
+step "Adding the VSCodium repository"
+# Written whole each run (not appended), so re-runs don't duplicate it.
+cat > /etc/yum.repos.d/vscodium.repo << 'EOF'
 [gitlab.com_paulcarroty_vscodium_repo]
 name=gitlab.com_paulcarroty_vscodium_repo
 baseurl=https://paulcarroty.gitlab.io/vscodium-deb-rpm-repo/rpms/
@@ -126,23 +74,56 @@ repo_gpgcheck=1
 gpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/raw/master/pub.gpg
 metadata_expire=1h
 EOF
-ok "VSCodium related repository provided"
+ok "VSCodium repository ready"
 
-# ── DNF packages ──────────────────────────────────────────────────────────────
+step "Adding Flathub"
+flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+ok "Flathub ready"
+
+# =============================================================================
+# 3. System upgrade
+# =============================================================================
+step "Upgrading the system"
+dnf upgrade --refresh -y
+ok "System is up to date"
+
+# =============================================================================
+# 4. Multimedia codecs
+# =============================================================================
+step "Installing multimedia codecs"
+swap_if_installed ffmpeg-free ffmpeg
+dnf group install -y multimedia
+dnf upgrade -y @multimedia --setopt=install_weak_deps=False --exclude=PackageKit-gstreamer-plugin
+swap_if_installed mesa-va-drivers mesa-va-drivers-freeworld
+swap_if_installed mesa-vdpau-drivers mesa-vdpau-drivers-freeworld
+ok "Multimedia codecs installed"
+
+# =============================================================================
+# 5. Firmware
+# =============================================================================
+step "Checking for firmware updates"
+fwupdmgr refresh --force &>/dev/null || true
+fwupdmgr update -y || warn "No firmware updates applied (none available, or fwupd unavailable)"
+ok "Firmware check complete"
+
+# =============================================================================
+# 6. Software
+# =============================================================================
 step "Installing DNF packages"
+# rsync is for upload-media; ethtool is for the Tailscale NIC tweak below.
 dnf install -y \
   akmod-nvidia \
   xorg-x11-drv-nvidia-cuda \
   podman \
   codium \
   awscli2 \
-  expect
+  expect \
+  rsync \
+  ethtool
 ok "DNF packages installed"
 
-# ── Flatpak apps ─────────────────────────────────────────────────────────────
-step "Installing Flatpak applications from Flathub"
-flatpak install -y \
-  flathub \
+step "Installing Flatpak applications"
+flatpak install -y --noninteractive flathub \
   com.brave.Browser \
   com.spotify.Client \
   com.sublimehq.SublimeText \
@@ -153,133 +134,98 @@ flatpak install -y \
   org.localsend.localsend_app
 ok "Flatpak applications installed"
 
-# ── Scripts ──────────────────────────────────────────────────────────────────
-step "Add scripts directory to PATH"
-if check_sudo_user "Scripts setup"; then
-  echo "export PATH=\"${SCRIPT_DIR}/scripts:${PATH}\"" >> /home/${SUDO_USER}/.bashrc
-  ok "Scripts directory added to PATH"
+step "Adding the scripts folder to your PATH"
+# \$PATH stays literal, so your shell expands it at login instead of baking in root's PATH now.
+path_line="export PATH=\"${SCRIPT_DIR}/scripts:\$PATH\""
+if grep -qxF "${path_line}" "${USER_HOME}/.bashrc"; then
+  ok "Already in ${USER_HOME}/.bashrc"
+else
+  echo "${path_line}" >> "${USER_HOME}/.bashrc"
+  ok "Added to ${USER_HOME}/.bashrc (open a new terminal to use it)"
 fi
 
-# ── AWS CLI Login ────────────────────────────────────────────────────────────
-step "Logging into AWS SSO profiles"
-AWS_PROFILES=(
-  default
-  simjeez
-)
-if check_sudo_user "AWS CLI login"; then
-  for profile in "${AWS_PROFILES[@]}"; do
-    aws_configure_profile_if_missing "${profile}"
-  done
-fi
+step "Configuring AWS CLI profiles"
+for profile in default simjeez; do
+  if grep -qs "^\[${profile}\]" "${USER_HOME}/.aws/credentials"; then
+    ok "AWS profile '${profile}' already configured"
+  else
+    as_user aws configure --profile "${profile}"
+    ok "AWS profile '${profile}' configured"
+  fi
+done
 
 # =============================================================================
-# 8. Set Permanent Hostname
+# 7. Hostname
 # =============================================================================
-step "Setting permanent hostname to orca"
+step "Setting the hostname to orca"
 hostnamectl set-hostname orca
-ok "Hostname set to orca permanently"
+ok "Hostname is orca"
 
 # =============================================================================
-# 9. Tailscale
+# 8. Tailscale
 # =============================================================================
 step "Installing and configuring Tailscale"
-
-# Install Tailscale
 if command -v tailscale &>/dev/null; then
-  ok "Tailscale already installed — skipping install"
+  ok "Tailscale already installed"
 else
   curl -fsSL https://tailscale.com/install.sh | sh
 fi
-sudo systemctl enable --now tailscaled
+systemctl enable --now tailscaled
 
-# Enable IP forwarding
-echo 'net.ipv4.ip_forward = 1' | tee -a /etc/sysctl.d/99-tailscale.conf
-echo 'net.ipv6.conf.all.forwarding = 1' | tee -a /etc/sysctl.d/99-tailscale.conf
-sysctl -p /etc/sysctl.d/99-tailscale.conf
+# Forwarding is needed to advertise a route. Written whole, so re-runs don't add duplicate lines.
+printf 'net.ipv4.ip_forward = 1\nnet.ipv6.conf.all.forwarding = 1\n' > /etc/sysctl.d/99-tailscale.conf
+sysctl -q -p /etc/sysctl.d/99-tailscale.conf
 
-# Optimise NIC for Tailscale subnet routing (persists via networkd-dispatcher)
-NETDEV=$(ip -o route get 8.8.8.8 | cut -f 5 -d " ")
+# Tailscale's recommended UDP tweak for forwarding. Fedora uses NetworkManager,
+# so a NetworkManager dispatcher script reapplies it whenever the interface comes up.
+NETDEV=$(ip -o route get 8.8.8.8 | awk '{for (i = 1; i < NF; i++) if ($i == "dev") print $(i + 1)}')
 ethtool -K "${NETDEV}" rx-udp-gro-forwarding on rx-gro-list off
- 
-mkdir -p /etc/networkd-dispatcher/routable.d/
-printf '#!/bin/sh\n\nethtool -K %s rx-udp-gro-forwarding on rx-gro-list off\n' "${NETDEV}" \
-  | tee /etc/networkd-dispatcher/routable.d/50-tailscale
-chmod 755 /etc/networkd-dispatcher/routable.d/50-tailscale
+cat > /etc/NetworkManager/dispatcher.d/50-tailscale-gro << EOF
+#!/bin/sh
+[ "\$1" = "${NETDEV}" ] && [ "\$2" = "up" ] && ethtool -K "${NETDEV}" rx-udp-gro-forwarding on rx-gro-list off
+exit 0
+EOF
+chmod 755 /etc/NetworkManager/dispatcher.d/50-tailscale-gro
+rm -f /etc/networkd-dispatcher/routable.d/50-tailscale
 
-# Authenticate with Tailscale (opens browser or prints a login URL)
-if tailscale status &>/dev/null; then
-  ok "Tailscale already logged in — skipping login"
-else
-  tailscale login
-fi
-
-# Bring Tailscale up and advertise this machine's IP
+# "tailscale up" logs in if needed; "set" changes the route on a machine that's already logged in.
 LOCAL_IP=$(hostname -I | awk '{print $1}')
-tailscale up --advertise-routes="${LOCAL_IP}/32"
-
+if tailscale status &>/dev/null; then
+  tailscale set --advertise-routes="${LOCAL_IP}/32"
+else
+  tailscale up --advertise-routes="${LOCAL_IP}/32"
+fi
 ok "Tailscale configured (route ${LOCAL_IP}/32 advertised)"
-warn "Remember to approve the subnet route at login.tailscale.com/admin/machines"
+warn "Approve the route at login.tailscale.com/admin/machines if it's new"
 
 # =============================================================================
-# 10. Podman Apps (run as original user)
+# 9. Podman apps (as you, in your own user session)
 # =============================================================================
 step "Installing Podman apps"
-
-if check_sudo_user "Podman apps"; then
-  USER_ID=$(id -u "${SUDO_USER}")
-  sudo -u "${SUDO_USER}" \
-    XDG_RUNTIME_DIR="/run/user/${USER_ID}" \
-    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${USER_ID}/bus" \
-    bash "${SCRIPT_DIR}/podman/installApps.sh"
-  ok "Podman apps installed"
-fi
+USER_ID=$(id -u "${SUDO_USER}")
+as_user env XDG_RUNTIME_DIR="/run/user/${USER_ID}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${USER_ID}/bus" \
+  bash "${SCRIPT_DIR}/podman/installApps.sh"
+ok "Podman apps installed"
 
 # =============================================================================
-# 11. Cleanup — remove unwanted KDE/bloat packages
+# 10. Cleanup
 # =============================================================================
-step "Removing bloatware"
-
+step "Removing unwanted KDE packages"
 BLOAT=(
-  dragon
-  elisa-player
-  kaddressbook
-  kaddressbook-libs
-  kamoso
-  kcalc
-  kcalutils
-  kdeconnectd
-  kmahjongg
-  kmailtransport
-  kmines
-  kmouth
-  kpat
-  krdc
-  krdc-libs
-  krdp
-  krdp-libs
-  krfb
-  krfb-libs
-  kwalletmanager5
-  kwrite
-  neochat
-  xwaylandvideobridge
-  gnome-abrt
-  filelight
+  dragon elisa-player kaddressbook kaddressbook-libs kamoso kcalc kcalutils kdeconnectd
+  kmahjongg kmailtransport kmines kmouth kpat krdc krdc-libs krdp krdp-libs krfb krfb-libs
+  kwalletmanager5 kwrite neochat xwaylandvideobridge gnome-abrt filelight
 )
-
-# Only attempt removal for packages that are actually installed
 TO_REMOVE=()
 for pkg in "${BLOAT[@]}"; do
-  rpm -q "$pkg" &>/dev/null && TO_REMOVE+=("$pkg")
+  rpm -q "${pkg}" &>/dev/null && TO_REMOVE+=("${pkg}")
 done
-
-if [[ ${#TO_REMOVE[@]} -gt 0 ]]; then
+if (( ${#TO_REMOVE[@]} )); then
   dnf remove -y "${TO_REMOVE[@]}"
-  ok "Removed ${#TO_REMOVE[@]} bloat package(s)"
+  ok "Removed ${#TO_REMOVE[@]} package(s)"
 else
-  ok "No bloat packages found — nothing to remove"
+  ok "Nothing to remove"
 fi
-
 dnf autoremove -y
 dnf clean all
 ok "System cleaned up"
@@ -288,6 +234,6 @@ ok "System cleaned up"
 # Done
 # =============================================================================
 echo -e "\n${GREEN}${BOLD}╔══════════════════════════════════════════╗"
-echo -e "║   Fedora setup complete!  Reboot now.   ║"
+echo -e "║   Fedora setup complete!  Reboot now.    ║"
 echo -e "╚══════════════════════════════════════════╝${RESET}\n"
-warn "A reboot is recommended so the NVIDIA kmod and any firmware updates take effect."
+warn "Reboot so the NVIDIA driver and any firmware updates take effect."
