@@ -30,20 +30,16 @@ swap_if_installed() {
   fi
 }
 
-# set_ini <file> <section> <key> <value>
-# Sets "key = value" inside [section] of an INI-style config, leaving every other
-# line (comments included) untouched. Handles the key being absent, commented out,
-# or set to a different value, and appends the section if it isn't there.
-# Returns 0 if the file changed, 1 if it was already correct — so always call it
-# from an `if`, never bare, or `set -e` will kill the script on a no-op.
+# set_ini <file> <section> <key> <value>: sets the key in place, leaving the rest of
+# the file alone. Returns 1 if unchanged, so call it from an `if` or set -e kills us.
 set_ini() {
   local file=$1 section=$2 key=$3 value=$4 tmp
   [[ -f ${file} ]] || : > "${file}"
   tmp=$(mktemp)
   awk -v sec="[${section}]" -v key="${key}" -v value="${value}" '
     BEGIN { in_sec = 0; seen_sec = 0; done = 0 }
-    # Section headers: leaving our section without having written the key means
-    # the key was missing, so emit it before moving on.
+    # Leaving our section without having written the key means it was missing,
+    # so emit it here before moving on.
     /^[[:space:]]*\[/ {
       if (in_sec && !done) { print key " = " value; done = 1 }
       in_sec = ($0 ~ "^[[:space:]]*\\" sec "[[:space:]]*$")
@@ -207,15 +203,12 @@ ok "Hostname is orca"
 # =============================================================================
 # 8. Bluetooth (fast keyboard reconnects)
 # =============================================================================
-# The Keychron takes ~25s to attach at boot because the adapter sits unpowered
-# until the desktop session starts, and it is slow to come back from idle because
-# the adapter page-scans at the power-saving default.
-#   AutoEnable      — power the adapter at boot instead of waiting for Plasma
-#   FastConnectable — scan aggressively for known devices (costs a little idle power)
+# AutoEnable powers the adapter at boot instead of waiting for Plasma; without it the
+# Keychron sits unconnected for ~25s. FastConnectable speeds up waking it from idle.
 step "Tuning Bluetooth for fast keyboard reconnects"
 BT_CONF=/etc/bluetooth/main.conf
 if ! rpm -q bluez &>/dev/null; then
-  warn "bluez isn't installed — skipping Bluetooth tuning"
+  warn "bluez isn't installed, skipping Bluetooth tuning"
 else
   bt_changed=0
   if set_ini "${BT_CONF}" General FastConnectable true; then bt_changed=1; fi
@@ -224,7 +217,7 @@ else
   systemctl enable bluetooth.service &>/dev/null || true
 
   if (( bt_changed )); then
-    warn "Restarting bluetooth — your keyboard will drop for a second"
+    warn "Restarting bluetooth, your keyboard will drop for a second"
     systemctl restart bluetooth.service
     ok "FastConnectable and AutoEnable set in ${BT_CONF}"
   else
@@ -247,8 +240,8 @@ systemctl enable --now tailscaled
 printf 'net.ipv4.ip_forward = 1\nnet.ipv6.conf.all.forwarding = 1\n' > /etc/sysctl.d/99-tailscale.conf
 sysctl -q -p /etc/sysctl.d/99-tailscale.conf
 
-# Tailscale's recommended UDP tweak for forwarding. Fedora uses NetworkManager,
-# so a NetworkManager dispatcher script reapplies it whenever the interface comes up.
+# Tailscale's recommended UDP tweak for forwarding. Fedora uses NetworkManager, so a
+# dispatcher script reapplies it whenever the interface comes up.
 NETDEV=$(ip -o route get 8.8.8.8 | awk '{for (i = 1; i < NF; i++) if ($i == "dev") print $(i + 1)}')
 ethtool -K "${NETDEV}" rx-udp-gro-forwarding on rx-gro-list off
 cat > /etc/NetworkManager/dispatcher.d/50-tailscale-gro << EOF
