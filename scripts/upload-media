@@ -9,17 +9,19 @@ INGEST="/srv/media/ingest"
 VIDEO_RE='.*\.\(mp4\|avi\|mkv\)$'
 
 usage() {
-  echo "Usage: $(basename "$0") -m | -s"
+  echo "Usage: $(basename "$0") -m | -s | -a"
   echo "  -m    upload Movies (to ${INGEST}/movies)"
   echo "  -s    upload Shows (to ${INGEST}/shows)"
+  echo "  -a    upload Anime (to ${INGEST}/anime)"
   exit 1
 }
 
 kind=""
-while getopts "msh" opt; do
+while getopts "msah" opt; do
   case ${opt} in
     m) [[ -z ${kind} ]] || usage; kind=movies; src="${SOURCE_ROOT}/Movies" ;;
-    s) [[ -z ${kind} ]] || usage; kind=shows; src="${SOURCE_ROOT}/Shows" ;;
+    s) [[ -z ${kind} ]] || usage; kind=shows;  src="${SOURCE_ROOT}/Shows" ;;
+    a) [[ -z ${kind} ]] || usage; kind=anime;  src="${SOURCE_ROOT}/Anime" ;;
     *) usage ;;
   esac
 done
@@ -36,7 +38,21 @@ dest="${INGEST}/${kind}"
 as_user() { sudo -u "${SUDO_USER}" -H "$@"; }
 
 echo "Processing ${src}"
-# Only the items inside: the Movies/Shows folder itself must stay the downloader container's.
+
+# Videos sitting loose in the top folder get wrapped in a folder named after the file,
+# so they go through the same path as everything else. Non-video loose files are left alone.
+while IFS= read -r -d '' file; do
+  fname=$(basename "${file}")
+  folder="${src}/${fname%.*}"
+  mkdir -p "${folder}"
+  target="${folder}/${fname}"
+  base=${target%.*}; ext=${target##*.}; n=1
+  while [[ -e ${target} ]]; do target="${base}_${n}.${ext}"; ((n++)); done
+  echo "Wrapping loose file: ${fname}"
+  mv "${file}" "${target}"
+done < <(find "${src}" -mindepth 1 -maxdepth 1 -type f -iregex "${VIDEO_RE}" -print0)
+
+# Only the items inside: the Movies/Shows/Anime folder itself must stay the downloader container's.
 find "${src}" -mindepth 1 -maxdepth 1 -type d -exec chown -R "${SUDO_USER}:" {} +
 
 uploaded=0
@@ -91,3 +107,4 @@ if ((uploaded > 0)); then
 fi
 
 ((${#failed[@]} == 0))
+
